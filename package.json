@@ -1,0 +1,19 @@
+{
+  "name": "io.stillwwater.liquidconsole",
+  "version": "0.1.0",
+  "displayName": "Liquid Console",
+  "hideInEditor": false,
+  "unity": "2018.3",
+  "type": "library",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stillwwater/liquidconsole.git"
+  },
+  "author": {
+    "name": "stillwwater",
+    "email": "stillwwater@gmail.com",
+    "url": "https://github.com/stillwwater"
+  },
+  "keywords": [],
+  "description": "In game console for unity."
+}
