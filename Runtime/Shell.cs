@@ -7,18 +7,22 @@ namespace Liquid.Console
 {
     [AttributeUsage(AttributeTargets.Method)]
     public class Command : Attribute {
+        public readonly string usage;
         public readonly string name;
 
-        public Command(string name = null) {
+        public Command(string usage = null, string name = null) {
+            this.usage = usage;
             this.name = name;
         }
     }
 
     [AttributeUsage(AttributeTargets.Field)]
     public class ConVar : Attribute {
+        public readonly string usage;
         public readonly string name;
 
-        public ConVar(string name = null) {
+        public ConVar(string usage = null, string name = null) {
+            this.usage = usage;
             this.name = name;
         }
     }
@@ -26,15 +30,22 @@ namespace Liquid.Console
     public static class Shell {
         public delegate bool ArgParser(string input, out object val);
 
+        [AttributeUsage(AttributeTargets.Method | AttributeTargets.Field)]
+        public class Hidden : Attribute {}
+
         public struct Line {
             public string value;
             public int color;
         }
 
         struct Function {
+            internal enum Type { Command, Variable, Hidden, Alias }
+
             internal object target;
             internal MethodInfo method;
             internal ParameterInfo[] signature;
+            internal string usage;
+            internal Function.Type type;
         }
 
         struct Token {
@@ -233,11 +244,22 @@ namespace Liquid.Console
                 target = target,
                 method = method,
                 signature = sign,
+                type = Function.Type.Command,
             };
-            name = (name ?? method.Name).ToLowerInvariant();
+            var command = method.GetCustomAttribute<Command>();
+            if (command != null) {
+                name = name ?? command.name;
+                func.usage = command.usage;
+            }
+            if (method.GetCustomAttribute<Hidden>() != null) {
+                func.type = Function.Type.Hidden;
+            }
+            AddFunc(func, (name ?? method.Name).ToLowerInvariant());
+        }
 
+        static void AddFunc(Function func, string name) {
             // Make sure we can parse the required items
-            foreach (var param in sign) {
+            foreach (var param in func.signature) {
                 if (!parsers.ContainsKey(param.ParameterType)) {
                     Fail(ConError.UnsupportedType, param.ParameterType);
                     return;
@@ -292,14 +314,30 @@ namespace Liquid.Console
         }
 
         static void AddVar(FieldInfo field, object target, string name = null) {
-            Action fn = () => {
+            Action getset = () => {
                 if (ArgCount == 0) {
                     Print(field.GetValue(target).ToString());
                     return;
                 }
                 field.SetValue(target, Arg(0, field.FieldType));
             };
-            Func(fn, (name ?? field.Name).ToLowerInvariant());
+            var func = new Function {
+                method = getset.Method,
+                target = target,
+                signature = getset.Method.GetParameters(),
+                type = Function.Type.Variable,
+            };
+            var conVar = field.GetCustomAttribute<ConVar>();
+
+            if (conVar != null) {
+                name = name ?? conVar.name;
+                func.usage = conVar.usage;
+            }
+
+            if (field.GetCustomAttribute<Hidden>() != null) {
+                func.type = Function.Type.Hidden;
+            }
+            AddFunc(func, (name ?? field.Name).ToLowerInvariant());
         }
 
         // Unregister a command or variable
@@ -610,6 +648,31 @@ namespace Liquid.Console
             };
         }
 
+        static string LocalSignature(string name, in Function func) {
+            var sign = new StringBuilder();
+            if (func.type == Function.Type.Variable) {
+                sign.Append("var ");
+            } else if (func.type == Function.Type.Alias) {
+                sign.Append("alias ");
+            }
+            sign.Append(name);
+            sign.Append(' ');
+
+            for (int i = 0; i < func.signature.Length; ++i) {
+                var param = func.signature[i];
+                if (i > 0) sign.Append(' ');
+
+                sign.Append(param.ParameterType.Name);
+                sign.Append(':');
+                sign.Append(param.Name);
+
+                if (param.IsOptional) {
+                    sign.Append('?');
+                }
+            }
+            return sign.ToString();
+        }
+
         static string GetErrorString(ConError error) {
             switch (error) {
                 case ConError.UnsupportedType: return "Unsupported parameter type {0}";
@@ -634,7 +697,30 @@ namespace Liquid.Console
             ErrorFmt("error: " + GetErrorString(error), args);
         }
 
-        [Command]
+        [Command("prints usage for a given command")]
+        static void Help(string command = null) {
+            if (command == null) {
+                foreach (var local in locals) {
+                    if (local.Value.type == Function.Type.Command) {
+                        Print(local.Key);
+                    }
+                }
+                return;
+            }
+            string name = command.ToLowerInvariant();
+
+            Function func;
+            if (!locals.TryGetValue(name, out func)) {
+                Fail(ConError.UndefinedLocal, command);
+                return;
+            }
+            Out(LocalSignature(name, func), 4);
+            if (func.usage != null) {
+                Print(func.usage);
+            }
+        }
+
+        [Command("defines a new variable")]
         static void Let(string variable, string val = null) {
             if (val == null) val = "0";
             Func(() => {
@@ -646,23 +732,33 @@ namespace Liquid.Console
             }, variable.ToLowerInvariant());
         }
 
-        [Command]
-        static void Unlet(string variable) {
-            locals.Remove(variable.ToLowerInvariant());
+        [Command("undefines a command or variable")]
+        static void Unlet(string local) {
+            locals.Remove(local.ToLowerInvariant());
         }
 
-        [Command]
+        [Command("gives a command or variable an alias")]
         static void Alias(string alias, string name) {
-            Func(() => { Eval($"{name} {JoinArgs()}"); }, alias);
+            name = name.ToLowerInvariant();
+            Action command = () => {
+                Eval($"{name} {JoinArgs()}");
+            };
+            var func = new Function {
+                method = command.Method,
+                target = command.Target,
+                signature = command.Method.GetParameters(),
+                type = Function.Type.Alias,
+            };
+            AddFunc(func, alias.ToLowerInvariant());
         }
 
-        [Command("print")]
+        [Command("prints a message to the console", "print")]
         static void CPrint() => Out(JoinArgs());
 
-        [Command]
+        [Command("prints a message to the console with an optional color")]
         static void Puts(string value, int color = 7) => Out(value, color);
 
-        [Command]
+        [Command("concatenates strings together")]
         static string Join() => JoinArgs(0, "");
 
         static void If(bool exp, string ifTrue, string ifFalse = null) {
@@ -682,23 +778,23 @@ namespace Liquid.Console
             }
         }
 
-        static float Add(float a, float b) => a + b;
-        static float Sub(float a, float b) => a - b;
-        static float Mul(float a, float b) => a * b;
-        static float Div(float a, float b) => a / b;
-
         static float Min(float a, float b) => (float)Math.Min(a, b);
         static float Max(float a, float b) => (float)Math.Min(a, b);
         static float Floor(float a) => (float)Math.Floor(a);
         static float Ceil(float a) => (float)Math.Ceiling(a);
 
-        static bool Eq(string a, string b) => a == b;
-        static bool Ne(string a, string b) => a != b;
-        static bool Lt(float a, float b) => a < b;
-        static bool Lte(float a, float b) => a <= b;
-        static bool Gt(float a, float b) => a > b;
-        static bool Gte(float a, float b) => a >= b;
-        static bool Not(bool a) => !a;
+        [Hidden] static float Add(float a, float b) => a + b;
+        [Hidden] static float Sub(float a, float b) => a - b;
+        [Hidden] static float Mul(float a, float b) => a * b;
+        [Hidden] static float Div(float a, float b) => a / b;
+
+        [Hidden] static bool Eq(string a, string b) => a == b;
+        [Hidden] static bool Ne(string a, string b) => a != b;
+        [Hidden] static bool Lt(float a, float b) => a < b;
+        [Hidden] static bool Lte(float a, float b) => a <= b;
+        [Hidden] static bool Gt(float a, float b) => a > b;
+        [Hidden] static bool Gte(float a, float b) => a >= b;
+        [Hidden] static bool Not(bool a) => !a;
 
         struct Parser {
             internal string input;
