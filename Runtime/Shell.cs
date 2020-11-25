@@ -3,6 +3,11 @@ using System.Text;
 using System.Collections.Generic;
 using System.Reflection;
 
+// Allows the shell to be used in non-unity projects
+#if UNITY_5_3_OR_NEWER
+using UnityEngine;
+#endif
+
 namespace Liquid.Console
 {
     [AttributeUsage(AttributeTargets.Method)]
@@ -82,6 +87,7 @@ namespace Liquid.Console
             NoStackFrame,
             ReturnType,
             VoidReturn,
+            Destroyed,
         };
 
         const BindingFlags Flags = BindingFlags.NonPublic
@@ -431,6 +437,15 @@ namespace Liquid.Console
                 Fail(ConError.UndefinedLocal, name);
                 return false;
             }
+
+#if UNITY_5_3_OR_NEWER
+            // If the component has been destroyed this command should be removed
+            if (func.target is MonoBehaviour && (MonoBehaviour)func.target == null) {
+                Fail(ConError.Destroyed, name, func.target.GetType());
+                Remove(name);
+                return false;
+            }
+#endif
             var args = new object[func.signature.Length];
 
             for (int i = 0; i < args.Length; ++i) {
@@ -684,6 +699,7 @@ namespace Liquid.Console
                 case ConError.RequiredArg: return "({0}) parameter #{1} ({2}) is not optional";
                 case ConError.ReturnType: return "'{0}' cannot be converted to {1}";
                 case ConError.VoidReturn: return "expected a return value";
+                case ConError.Destroyed: return "({0}) the Component '{1}' has been destroyed";
                 case ConError.NoStackFrame:
                     return "cannot get argument outside of a command method.";
                 case ConError.StaticField:
@@ -694,7 +710,7 @@ namespace Liquid.Console
         }
 
         static void Fail(ConError error, params object[] args) {
-            ErrorFmt("error: " + GetErrorString(error), args);
+            ErrorFmt(string.Concat("error: ", GetErrorString(error)), args);
         }
 
         [Command("prints usage for a given command")]
