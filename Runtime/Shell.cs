@@ -5,6 +5,24 @@ using System.Reflection;
 
 namespace Liquid.Console
 {
+    [AttributeUsage(AttributeTargets.Method)]
+    public class Command : Attribute {
+        public readonly string name;
+
+        public Command(string name = null) {
+            this.name = name;
+        }
+    }
+
+    [AttributeUsage(AttributeTargets.Field)]
+    public class ConVar : Attribute {
+        public readonly string name;
+
+        public ConVar(string name = null) {
+            this.name = name;
+        }
+    }
+
     public static class Shell {
         public delegate bool ArgParser(string input, out object val);
 
@@ -85,10 +103,7 @@ namespace Liquid.Console
         // Initializes the shell by adding some default commands.
         // Optionally adds extension commands.
         public static void Init(bool math = false) {
-            Func(CPrint, "print");
-            Func<string, int>(COut, "out");
-            Func(typeof(Shell), "alias", "let", "unlet", "join");
-
+            Module(typeof(Shell));
             if (math) InitMathExtension();
         }
 
@@ -109,6 +124,33 @@ namespace Liquid.Console
             locals.Clear();
             buffer.Clear();
             callstack.Clear();
+        }
+
+        // Adds instance and static methods and fields marked with the
+        // [Command] and [ConVar] attributes.
+        public static void Module(object target)
+            => AddModule(target.GetType(), target);
+
+        // Adds static methods marked with the [Command] and [ConVar]
+        // attributes.
+        public static void Module(Type type) => AddModule(type, null);
+
+        static void AddModule(Type type, object target) {
+            var flags = target == null ? Flags & ~BindingFlags.Instance : Flags;
+
+            foreach (var method in type.GetMethods(flags)) {
+                var attr = method.GetCustomAttribute<Command>();
+                if (attr != null) {
+                    AddFunc(method, target, attr.name);
+                }
+            }
+
+            foreach (var field in type.GetFields(flags)) {
+                var attr = field.GetCustomAttribute<ConVar>();
+                if (attr != null) {
+                    AddVar(field, target, attr.name);
+                }
+            }
         }
 
         // Adds a command by finding the method in the target object.
@@ -249,7 +291,7 @@ namespace Liquid.Console
             }
         }
 
-        static void AddVar(FieldInfo field, object target) {
+        static void AddVar(FieldInfo field, object target, string name = null) {
             Action fn = () => {
                 if (ArgCount == 0) {
                     Print(field.GetValue(target).ToString());
@@ -257,7 +299,7 @@ namespace Liquid.Console
                 }
                 field.SetValue(target, Arg(0, field.FieldType));
             };
-            Func(fn, field.Name.ToLowerInvariant());
+            Func(fn, (name ?? field.Name).ToLowerInvariant());
         }
 
         // Unregister a command or variable
@@ -592,6 +634,7 @@ namespace Liquid.Console
             ErrorFmt("error: " + GetErrorString(error), args);
         }
 
+        [Command]
         static void Let(string variable, string val = null) {
             if (val == null) val = "0";
             Func(() => {
@@ -603,18 +646,23 @@ namespace Liquid.Console
             }, variable.ToLowerInvariant());
         }
 
+        [Command]
         static void Unlet(string variable) {
             locals.Remove(variable.ToLowerInvariant());
         }
 
+        [Command]
         static void Alias(string alias, string name) {
             Func(() => { Eval($"{name} {JoinArgs()}"); }, alias);
         }
 
+        [Command("print")]
         static void CPrint() => Out(JoinArgs());
 
-        static void COut(string value, int color = 1) => Out(value, color);
+        [Command]
+        static void Puts(string value, int color = 7) => Out(value, color);
 
+        [Command]
         static string Join() => JoinArgs(0, "");
 
         static void If(bool exp, string ifTrue, string ifFalse = null) {
@@ -625,7 +673,7 @@ namespace Liquid.Console
         }
 
         static void For(string variable, int min, int max, string block) {
-            for (int i = 0; i < max; ++i) {
+            for (int i = min; i < max; ++i) {
                 var index = i;
                 Func(() => Print(index), variable);
                 if (!Eval(block)) {

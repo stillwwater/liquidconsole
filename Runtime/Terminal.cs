@@ -5,9 +5,13 @@ namespace Liquid.Console
 {
     public class Terminal : MonoBehaviour {
         [SerializeField] InputField input = null;
+        [ConVar] int variable;
 
         void Start() {
             Shell.Init(math: true);
+            Shell.Module(this);
+            Shell.Eval("alias quit exit");
+
             input.caretWidth = 8;
             input.Select();
             input.ActivateInputField();
@@ -34,6 +38,15 @@ namespace Liquid.Console
                 }
             }
             Shell.buffer.Clear();
+        }
+
+        [Command]
+        void Exit() {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
         }
     }
 } // namespace Liquid.Console
