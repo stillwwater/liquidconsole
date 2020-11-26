@@ -156,11 +156,12 @@ namespace Liquid.Console
             Func(typeof(Shell), "if", "for",
                  "add", "sub", "mul", "div",
                  "min", "max", "floor", "ceil",
-                 "lt", "lte", "gt", "gte", "eq", "ne", "not");
-            // TODO: Group logical operators in op group since only aliases are used
+                 "oplt", "oplte", "opgt", "opgte",
+                 "opeq", "opne", "not");
+
             Shell.Eval(@"alias + add; alias - sub; alias * mul; alias / div;
-                         alias < lt; alias <= lte; alias > gt; alias >= gte;
-                         alias = eq; alias != ne");
+                         alias < oplt; alias <= oplte; alias > opgt; alias >= opgte;
+                         alias = opeq; alias != opne");
         }
 
         // Removes all commands.
@@ -172,27 +173,33 @@ namespace Liquid.Console
 
         // Adds instance and static methods and fields marked with the
         // [Command] and [ConVar] attributes.
-        public static void Module(object target)
-            => AddModule(target.GetType(), target);
+        //
+        // If the module name is not null commands and variables in the module
+        // will be named in the format 'module.command'. This can be used to call
+        // the correct command when there are more than one instance of the object
+        // where the command is defined.
+        public static void Module(object target, string module = null)
+            => AddModule(target.GetType(), target, module);
 
         // Adds static methods marked with the [Command] and [ConVar]
         // attributes.
-        public static void Module(Type type) => AddModule(type, null);
+        public static void Module(Type type, string module = null)
+            => AddModule(type, null, module);
 
-        static void AddModule(Type type, object target) {
+        static void AddModule(Type type, object target, string module) {
             var flags = target == null ? Flags & ~BindingFlags.Instance : Flags;
 
             foreach (var method in type.GetMethods(flags)) {
                 var attr = method.GetCustomAttribute<Command>();
                 if (attr != null) {
-                    AddFunc(method, target, attr.name);
+                    AddFunc(method, target, attr.name, module);
                 }
             }
 
             foreach (var field in type.GetFields(flags)) {
                 var attr = field.GetCustomAttribute<ConVar>();
                 if (attr != null) {
-                    AddVar(field, target, attr.name);
+                    AddVar(field, target, attr.name, module);
                 }
             }
         }
@@ -271,7 +278,8 @@ namespace Liquid.Console
             System.Func<T0, T1, T2, T3, T4> fn, string name = null)
                 => AddFunc(fn.Method, fn.Target, name);
 
-        static void AddFunc(MethodInfo method, object target, string name) {
+        static void AddFunc(MethodInfo method, object target,
+                            string name, string module = null) {
             var sign = method.GetParameters();
             var func = new Function {
                 target = target,
@@ -287,7 +295,12 @@ namespace Liquid.Console
             if (method.GetCustomAttribute<Hidden>() != null) {
                 func.type = Function.Type.Hidden;
             }
-            AddFunc(func, (name ?? method.Name).ToLowerInvariant());
+
+            name = (name ?? method.Name).ToLowerInvariant();
+            if (module != null) {
+                name = string.Concat(module.ToLowerInvariant(), ".", name);
+            }
+            AddFunc(func, name);
         }
 
         static void AddFunc(Function func, string name) {
@@ -320,7 +333,7 @@ namespace Liquid.Console
                 Fail(ConError.StaticField, type, field);
                 return;
             }
-            AddVar(info, target);
+            AddVar(info, target, null);
         }
 
         public static void Var(object target, params string[] fields) {
@@ -337,7 +350,7 @@ namespace Liquid.Console
                 Fail(ConError.UndefinedField, type, staticField);
                 return;
             }
-            AddVar(info, null);
+            AddVar(info, null, null);
         }
 
         public static void Var(Type type, params string[] fields) {
@@ -346,7 +359,8 @@ namespace Liquid.Console
             }
         }
 
-        static void AddVar(FieldInfo field, object target, string name = null) {
+        static void AddVar(FieldInfo field, object target,
+                           string name, string module = null) {
             Action getset = () => {
                 if (ArgCount == 0) {
                     Print(field.GetValue(target).ToString());
@@ -370,7 +384,12 @@ namespace Liquid.Console
             if (field.GetCustomAttribute<Hidden>() != null) {
                 func.type = Function.Type.Hidden;
             }
-            AddFunc(func, (name ?? field.Name).ToLowerInvariant());
+
+            name = (name ?? field.Name).ToLowerInvariant();
+            if (module != null) {
+                name = string.Concat(module.ToLowerInvariant(), ".", name);
+            }
+            AddFunc(func, name);
         }
 
         // Unregister a command or variable
@@ -987,12 +1006,12 @@ namespace Liquid.Console
         [Hidden] static float Mul(float a, float b) => a * b;
         [Hidden] static float Div(float a, float b) => a / b;
 
-        [Hidden] static bool Eq(string a, string b) => a == b;
-        [Hidden] static bool Ne(string a, string b) => a != b;
-        [Hidden] static bool Lt(float a, float b) => a < b;
-        [Hidden] static bool Lte(float a, float b) => a <= b;
-        [Hidden] static bool Gt(float a, float b) => a > b;
-        [Hidden] static bool Gte(float a, float b) => a >= b;
+        [Hidden] static bool OpEq(string a, string b) => a == b;
+        [Hidden] static bool OpNe(string a, string b) => a != b;
+        [Hidden] static bool OpLt(float a, float b) => a < b;
+        [Hidden] static bool OpLte(float a, float b) => a <= b;
+        [Hidden] static bool OpGt(float a, float b) => a > b;
+        [Hidden] static bool OpGte(float a, float b) => a >= b;
         [Hidden] static bool Not(bool a) => !a;
 
         struct Parser {
