@@ -445,6 +445,39 @@ namespace Liquid.Console
             locals.Remove(name.ToLowerInvariant());
         }
 
+        // Unregisters methods marked with [Command] and fields marked with
+        // [ConVar] from an object instance. If a name was given to the module
+        // when it was added, it should also be given here.
+        public static void RemoveModule(object target, string module = null) {
+            RemoveModule(target.GetType(), module);
+        }
+
+        // Unregisters methods marked with [Command] and fields marked with
+        // [ConVar]. If a name was given to the module when it was added, it
+        // should also be given here.
+        public static void RemoveModule(Type type, string module = null) {
+            foreach (var method in type.GetMethods(Flags)) {
+                var command = method.GetCustomAttribute<Command>();
+                if (command == null) continue;
+
+                var name = command.name ?? method.Name;
+                if (module != null) {
+                    name = string.Concat(module, ".", name);
+                }
+                Remove(name);
+            }
+            foreach (var field in type.GetFields(Flags)) {
+                var conVar = field.GetCustomAttribute<ConVar>();
+                if (conVar == null) continue;
+
+                var name = conVar.name ?? field.Name;
+                if (module != null) {
+                    name = string.Concat(module, ".", name);
+                }
+                Remove(name);
+            }
+        }
+
         // Returns an argument for the current command. Arguments start at index 0.
         // If optional is set to true, the argument will have a default value
         // assigned if it's not present.
