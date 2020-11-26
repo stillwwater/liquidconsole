@@ -109,6 +109,10 @@ namespace Liquid.Console
                 { typeof(int), ParseInt },
                 { typeof(float), ParseFloat },
                 { typeof(bool), ParseBool },
+                { typeof(string[]), ParseArray<string>(ParseString) },
+                { typeof(int[]), ParseArray<int>(ParseInt) },
+                { typeof(float[]), ParseArray<float>(ParseFloat) },
+                { typeof(bool[]), ParseArray<bool>(ParseBool) },
                 { typeof(int?), ParseNullable<int>(ParseInt) },
                 { typeof(float?), ParseNullable<float>(ParseFloat) },
                 { typeof(bool?), ParseNullable<bool>(ParseBool) },
@@ -329,7 +333,7 @@ namespace Liquid.Console
             };
             var func = new Function {
                 method = getset.Method,
-                target = target,
+                target = getset.Target,
                 signature = getset.Method.GetParameters(),
                 type = Function.Type.Variable,
             };
@@ -489,13 +493,21 @@ namespace Liquid.Console
             return ok;
         }
 
-        // Add a parser to handle objects of type T
-        public static void AddParser<T>(ArgParser parser) {
+        // Add a parser to handle objects of type T. If array is set to true
+        // then a parser that handles T[] will also be created.
+        public static void AddParser<T>(ArgParser parser, bool array = false) {
             if (parsers.ContainsKey(typeof(T))) {
                 parsers[typeof(T)] = parser;
-                return;
+            } else {
+                parsers.Add(typeof(T), parser);
             }
-            parsers.Add(typeof(T), parser);
+            if (array) {
+                if (parsers.ContainsKey(typeof(T[]))) {
+                    parsers[typeof(T[])] = ParseArray<T>(parser);
+                    return;
+                }
+                parsers.Add(typeof(T[]), ParseArray<T>(parser));
+            }
         }
 
         // Convenience method for joining command arguments into one string.
@@ -565,6 +577,44 @@ namespace Liquid.Console
             return false;
         }
 
+        static ArgParser ParseArray<T>(ArgParser parser) {
+            return (string input, out object val) => {
+                if (input == "") {
+                    val = new T[0];
+                    return true;
+                }
+                var buf = new StringBuilder();
+                var items = new List<T>();
+                bool ok = true;
+                val = null;
+
+                while (ok && input != null && input != "") {
+                    var tok = ArrayEatNext(input, buf);
+                    if (!tok.HasValue) {
+                        return false;
+                    }
+
+                    var str = tok.Value.value.Trim();
+                    var res = Parse(ref str);
+                    if (res == null || res.Count == 0) {
+                        return false;
+                    }
+
+                    object item;
+                    if (!parser(res[0], out item)) {
+                        return false;
+                    }
+
+                    items.Add((T)item);
+                    input = tok.Value.rest;
+                    if (tok.Value.eol) break;
+                }
+
+                val = items.ToArray();
+                return true;
+            };
+        }
+
         static ArgParser ParseNullable<T>(ArgParser parser) where T : struct
             => (string input, out object val) => {
                 if (parser(input, out object v)) {
@@ -614,7 +664,7 @@ namespace Liquid.Console
             }
             var parse = new Parser {
                 input = input,
-                tok = new StringBuilder(),
+                tok = buf,
                 type = Token.Type.Literal
             };
 
@@ -636,6 +686,7 @@ namespace Liquid.Console
                         break;
 
                     case ':': parse.Var(); break;
+                    case ',': parse.Comma(); break;
 
                     case ' ':
                         if (parse.Space()) return parse.GetToken();
@@ -655,6 +706,46 @@ namespace Liquid.Console
             }
             if (parse.EofError()) {
                 return null;
+            }
+            return new Token {
+                type = parse.type,
+                value = parse.tok.ToString(),
+                rest = ""
+            };
+        }
+
+        static Token? ArrayEatNext(string input, StringBuilder buf) {
+            buf.Clear();
+            if (input == "") {
+                return new Token { eol = true, rest = "" };
+            }
+            var parse = new Parser {
+                input = input,
+                tok = buf,
+                type = Token.Type.Literal,
+            };
+            for (parse.pos = 0; parse.pos < input.Length; ++parse.pos) {
+                parse.ch = input[parse.pos];
+                switch (parse.ch) {
+                    case ',':
+                        if (parse.OuterScope)
+                            return parse.GetToken();
+                        break;
+
+                    // Ignore these, they'll get parsed later
+                    case '"': parse.Quote(true); break;
+                    case '(':
+                    case '{': parse.Open(true); break;
+                    case ')':
+                    case '}': parse.Close(true); break;
+                    case ' ': parse.Space(); break;
+                    case '\r':
+                    case '\n': break;
+
+                    default:
+                        parse.tok.Append(parse.ch);
+                        break;
+                }
             }
             return new Token {
                 type = parse.type,
@@ -859,6 +950,16 @@ namespace Liquid.Console
                 return false;
             }
 
+            internal void Comma() {
+                tok.Append(ch);
+                // When a comma is present an eval expression becomes an array
+                // This allows us to parse vectors which are represented as
+                // (x, y, z) when converted to a string
+                if (type == Token.Type.Eval && paren == 1) {
+                    type = Token.Type.Literal;
+                }
+            }
+
             internal void Var() {
                 if (OuterScope) {
                     type = Token.Type.Eval;
@@ -876,17 +977,20 @@ namespace Liquid.Console
                 return false;
             }
 
-            internal bool Quote() {
+            internal bool Quote(bool keep = false) {
                 // assert type is literal
                 if (paren > 0 || brace > 0) {
                     tok.Append(ch);
                     return false;
                 }
+                if (keep) {
+                    tok.Append(ch);
+                }
                 quote = !quote;
                 return !quote;
             }
 
-            internal void Open() {
+            internal void Open(bool keep = false) {
                 if (quote) {
                     tok.Append(ch);
                     return;
@@ -895,17 +999,23 @@ namespace Liquid.Console
                     case '(':
                         if (brace > 0) break;
                         type = Token.Type.Eval;
-                        if (paren++ == 0) return;
+                        if (paren++ == 0) {
+                            if (keep) tok.Append(ch);
+                            return;
+                        }
                         break;
                     case '{':
                         if (paren > 0) break;
-                        if (brace++ == 0) return;
+                        if (brace++ == 0) {
+                            if (keep) tok.Append(ch);
+                            return;
+                        }
                         break;
                 }
                 tok.Append(ch);
             }
 
-            internal bool Close() {
+            internal bool Close(bool keep = false) {
                 if (quote) {
                     tok.Append(ch);
                     return false;
@@ -913,11 +1023,17 @@ namespace Liquid.Console
                 switch (ch) {
                     case ')':
                         if (brace > 0) break;
-                        if (--paren == 0) return true;
+                        if (--paren == 0) {
+                            if (keep) tok.Append(ch);
+                            return true;
+                        }
                         break;
                     case '}':
                         if (paren > 0) break;
-                        if (--brace == 0) return true;
+                        if (--brace == 0) {
+                            if (keep) tok.Append(ch);
+                            return true;
+                        }
                         break;
                 }
                 tok.Append(ch);
