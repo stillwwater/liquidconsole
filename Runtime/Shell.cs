@@ -42,11 +42,12 @@ namespace Liquid.Console
         struct Function {
             internal enum Type { Command, Variable, Hidden, Alias }
 
+            internal Function.Type type;
             internal object target;
+            internal object reference;
             internal MethodInfo method;
             internal ParameterInfo[] signature;
             internal string usage;
-            internal Function.Type type;
         }
 
         struct Token {
@@ -84,6 +85,7 @@ namespace Liquid.Console
             NoStackFrame,
             ReturnType,
             VoidReturn,
+            Readonly,
             Destroyed,
         };
 
@@ -149,6 +151,9 @@ namespace Liquid.Console
         // Optionally adds extension commands.
         public static void Init(bool math = false) {
             Module(typeof(Shell));
+            Var("zero", () => Vector4.zero);
+            Var("one", () => Vector4.one);
+
             if (math) InitMathExtension();
         }
 
@@ -156,6 +161,7 @@ namespace Liquid.Console
         static void InitMathExtension() {
             Func(typeof(Shell), "if", "for",
                  "add", "sub", "mul", "div",
+                 "addv", "subv", "mulv", "divv",
                  "min", "max", "floor", "ceil",
                  "oplt", "oplte", "opgt", "opgte",
                  "opeq", "opne", "not");
@@ -284,6 +290,7 @@ namespace Liquid.Console
             var sign = method.GetParameters();
             var func = new Function {
                 target = target,
+                reference = target,
                 method = method,
                 signature = sign,
                 type = Function.Type.Command,
@@ -360,6 +367,41 @@ namespace Liquid.Console
             }
         }
 
+        // Adds a readonly variable using a getter function.
+        //
+        // For MonoBehaviours an instance should be passed so that the variable
+        // is removed when the GameObject is destroyed.
+        public static void Var<T>(string name, Func<T> getvar, object instance = null)
+            => Var<T>(name, getvar, null, instance);
+
+        // Adds a variable using getter and setter functions.
+        //
+        // For MonoBehaviours an instance should be passed so that the variable
+        // is removed when the GameObject is destroyed.
+        public static void Var<T>(string name, Func<T> getvar,
+                                  Action<T> setvar, object instance = null) {
+            Action getset = () => {
+                if (ArgCount == 0) {
+                    Print(getvar().ToString());
+                    return;
+                }
+                if (setvar == null) {
+                    Fail(ConError.Readonly, name);
+                    return;
+                }
+                setvar(Arg<T>(0));
+            };
+            var func = new Function {
+                method = getset.Method,
+                target = getset.Target,
+                reference = instance,
+                signature = getset.Method.GetParameters(),
+                type = Function.Type.Variable
+            };
+
+            AddFunc(func, name.ToLowerInvariant());
+        }
+
         static void AddVar(FieldInfo field, object target,
                            string name, string module = null) {
             Action getset = () => {
@@ -367,11 +409,16 @@ namespace Liquid.Console
                     Print(field.GetValue(target).ToString());
                     return;
                 }
+                if (field.IsInitOnly) {
+                    Fail(ConError.Readonly, field.Name);
+                    return;
+                }
                 field.SetValue(target, Arg(0, field.FieldType));
             };
             var func = new Function {
                 method = getset.Method,
                 target = getset.Target,
+                reference = getset.Target,
                 signature = getset.Method.GetParameters(),
                 type = Function.Type.Variable,
             };
@@ -836,6 +883,13 @@ namespace Liquid.Console
             if (input == "") {
                 return new Token { eol = true, rest = "" };
             }
+
+            // Vector.ToString() adds parenthesis around the vector while the
+            // parser ignores them after they're parsed.
+            if (input.Length > 1 && input[0] == '(' || input[0] == '}') {
+                input = input.Substring(1, input.Length - 2);
+            }
+
             var parse = new Parser {
                 input = input,
                 tok = buf,
@@ -911,6 +965,7 @@ namespace Liquid.Console
                 case ConError.VoidReturn: return "expected a return value";
                 case ConError.Destroyed: return "({0}) the Component '{1}' has been destroyed";
                 case ConError.InvalidEscape: return "'{0}' cannot be escaped using '\\'";
+                case ConError.Readonly: return "'{0}' is readonly and cannot be modified";
                 case ConError.NoStackFrame:
                     return "cannot get argument outside of a command method.";
                 case ConError.StaticField:
@@ -1014,6 +1069,10 @@ namespace Liquid.Console
         [Hidden] static float Sub(float a, float b) => a - b;
         [Hidden] static float Mul(float a, float b) => a * b;
         [Hidden] static float Div(float a, float b) => a / b;
+        [Hidden] static Vector4 AddV(Vector4 a, Vector4 b) => a + b;
+        [Hidden] static Vector4 SubV(Vector4 a, Vector4 b) => a - b;
+        [Hidden] static Vector4 MulV(Vector4 a, float b) => a * b;
+        [Hidden] static Vector4 DivV(Vector4 a, float b) => a / b;
 
         [Hidden] static bool OpEq(string a, string b) => a == b;
         [Hidden] static bool OpNe(string a, string b) => a != b;
