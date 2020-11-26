@@ -2,11 +2,7 @@ using System;
 using System.Text;
 using System.Collections.Generic;
 using System.Reflection;
-
-// Allows the shell to be used in non-unity projects
-#if UNITY_5_3_OR_NEWER
 using UnityEngine;
-#endif
 
 namespace Liquid.Console
 {
@@ -113,6 +109,15 @@ namespace Liquid.Console
                 { typeof(int[]), ParseArray<int>(ParseInt) },
                 { typeof(float[]), ParseArray<float>(ParseFloat) },
                 { typeof(bool[]), ParseArray<bool>(ParseBool) },
+                { typeof(Vector2), ParseVector<Vector2>(2) },
+                { typeof(Vector3), ParseVector<Vector3>(3) },
+                { typeof(Vector4), ParseVector<Vector4>(4) },
+                { typeof(Vector2Int), ParseVector<Vector2Int>(2) },
+                { typeof(Vector3Int), ParseVector<Vector3Int>(3) },
+                { typeof(Color), ParseVector<Color>(4) },
+                { typeof(Color32), ParseVector<Color32>(4) },
+                { typeof(Rect), ParseVector<Rect>(4) },
+                { typeof(RectInt), ParseVector<RectInt>(4) },
             };
 
         // Only access inside a command method.
@@ -439,14 +444,12 @@ namespace Liquid.Console
                 return false;
             }
 
-#if UNITY_5_3_OR_NEWER
             // If the component has been destroyed this command should be removed
             if (func.target is MonoBehaviour && (MonoBehaviour)func.target == null) {
                 Fail(ConError.Destroyed, name, func.target.GetType());
                 Remove(name);
                 return false;
             }
-#endif
             var args = new object[func.signature.Length];
 
             for (int i = 0; i < args.Length; ++i) {
@@ -612,6 +615,72 @@ namespace Liquid.Console
             };
         }
 
+        static ArgParser ParseVector<T>(int size) {
+            return (string input, out object val) => {
+                var parser = parsers[typeof(float[])];
+                object res;
+                val = null;
+
+                if (!parser(input, out res)) {
+                    return false;
+                }
+
+                var a = (float[])res;
+                if (a.Length > 4) {
+                    return false;
+                }
+
+                var type = typeof(T);
+                var length = (int)Math.Min(a.Length, size);
+                var v = Vector4.zero;
+
+                // Vectors of different sizes are implicitly casted with extra
+                // zeros added when needed.
+                for (int i = 0; i < length; ++i) {
+                    v[i] = a[i];
+                }
+
+                if (type == typeof(Vector2)) {
+                    val = (Vector2)v;
+
+                } else if (type == typeof(Vector3)) {
+                    val = (Vector3)v;
+
+                } else if (type == typeof(Vector4)) {
+                    val = v;
+
+                } else if (type == typeof(Vector2Int)) {
+                    val = new Vector2Int((int)v.x, (int)v.y);
+
+                } else if (type == typeof(Vector3Int)) {
+                    val = new Vector3Int((int)v.x, (int)v.y, (int)v.z);
+
+                } else if (type == typeof(Color)) {
+                    if (a.Length < 3) return false;
+                    if (a.Length < 4) v.w = 1f;
+                    val = (Color)v;
+
+                } else if (type == typeof(Color32)) {
+                    if (a.Length < 3) return false;
+                    if (a.Length < 4) v.w = 255f;
+                    val = new Color32((byte)v.x, (byte)v.y, (byte)v.z, (byte)v.w);
+
+                } else if (type == typeof(Rect)) {
+                    if (a.Length < 4) return false;
+                    val = new Rect(v.x, v.y, v.z, v.w);
+
+                } else if (type == typeof(RectInt)) {
+                    if (a.Length < 4) return false;
+                    val = new RectInt((int)v.x, (int)v.y, (int)v.z, (int)v.w);
+
+                } else {
+                    return false;
+                }
+
+                return true;
+            };
+        }
+
         static List<string> Parse(ref string input) {
             var stack = new List<string>();
             var buf = new StringBuilder();
@@ -711,12 +780,14 @@ namespace Liquid.Console
                 tok = buf,
                 type = Token.Type.Literal,
             };
+
             for (parse.pos = 0; parse.pos < input.Length; ++parse.pos) {
                 parse.ch = input[parse.pos];
                 switch (parse.ch) {
                     case ',':
                         if (parse.OuterScope)
                             return parse.GetToken();
+                        parse.tok.Append(parse.ch);
                         break;
 
                     // Ignore these, they'll get parsed later
@@ -985,9 +1056,9 @@ namespace Liquid.Console
                 switch (ch) {
                     case '(':
                         if (brace > 0) break;
-                        type = Token.Type.Eval;
                         if (paren++ == 0) {
                             if (keep) tok.Append(ch);
+                            else type = Token.Type.Eval;
                             return;
                         }
                         break;
