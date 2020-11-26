@@ -105,12 +105,14 @@ namespace Liquid.Console
                 { typeof(int), ParseInt },
                 { typeof(float), ParseFloat },
                 { typeof(bool), ParseBool },
+                { typeof(GameObject), ParseGameObject },
 
                 // Arrays
                 { typeof(string[]), ParseArray<string>(ParseString) },
                 { typeof(int[]), ParseArray<int>(ParseInt) },
                 { typeof(float[]), ParseArray<float>(ParseFloat) },
                 { typeof(bool[]), ParseArray<bool>(ParseBool) },
+                { typeof(GameObject[]), ParseArray<GameObject>(ParseGameObject) },
                 { typeof(string[][]), ParseArray<string[]>(ParseArray<string>(ParseString)) },
                 { typeof(int[][]), ParseArray<int[]>(ParseArray<int>(ParseInt)) },
                 { typeof(float[][]), ParseArray<float[]>(ParseArray<float>(ParseFloat)) },
@@ -594,6 +596,15 @@ namespace Liquid.Console
             }
             val = null;
             return false;
+        }
+
+        static bool ParseGameObject(string input, out object val) {
+            if (input == "" || input == "null") {
+                val = null;
+                return true;
+            }
+            val = GameObject.Find(input);
+            return true;
         }
 
         static ArgParser ParseArray<T>(ArgParser parser) {
