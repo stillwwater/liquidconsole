@@ -77,6 +77,7 @@ namespace Liquid.Console
             UnexpectedEOF,
             UndefinedField,
             UndefinedMethod,
+            InvalidEscape,
             StaticField,
             ArgType,
             RequiredArg,
@@ -773,9 +774,8 @@ namespace Liquid.Console
                 type = Token.Type.Literal
             };
 
-            for (int i = 0; i < input.Length; ++i) {
-                parse.pos = i;
-                parse.ch = input[i];
+            for (parse.pos = 0; parse.pos < input.Length; ++parse.pos) {
+                parse.ch = input[parse.pos];
 
                 switch (parse.ch) {
                     case '(':
@@ -803,6 +803,14 @@ namespace Liquid.Console
 
                     case '\r':
                     case '\n': break;
+
+                    case '\\':
+                        if (parse.Escape('n', '\n')) break;
+                        if (parse.Escape('r', '\r')) break;
+                        if (parse.Escape('"', '"')) break;
+                        if (parse.Escape('\\', '\\')) break;
+                        parse.EscapeError();
+                        return null;
 
                     case '#':
                         if (parse.Comment()) return parse.GetToken();
@@ -902,6 +910,7 @@ namespace Liquid.Console
                 case ConError.ReturnType: return "'{0}' cannot be converted to {1}";
                 case ConError.VoidReturn: return "expected a return value";
                 case ConError.Destroyed: return "({0}) the Component '{1}' has been destroyed";
+                case ConError.InvalidEscape: return "'{0}' cannot be escaped using '\\'";
                 case ConError.NoStackFrame:
                     return "cannot get argument outside of a command method.";
                 case ConError.StaticField:
@@ -1053,6 +1062,13 @@ namespace Liquid.Console
                 return false;
             }
 
+            internal void EscapeError() {
+                string next = (pos + 1) < input.Length
+                            ? input[pos + 1].ToString()
+                            : "EOF";
+                Fail(ConError.InvalidEscape, next);
+            }
+
             internal bool Space() {
                 if (OuterScope) {
                     return tok.Length > 0;
@@ -1098,6 +1114,15 @@ namespace Liquid.Console
                     pos = input.Length - 1;
                 }
                 return true;
+            }
+
+            internal bool Escape(char escape, char result) {
+                if (pos + 1 < input.Length && input[pos + 1] == escape) {
+                    tok.Append(result);
+                    ++pos;
+                    return true;
+                }
+                return false;
             }
 
             internal bool Quote(bool keep = false) {
