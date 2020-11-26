@@ -785,6 +785,10 @@ namespace Liquid.Console
                     case '\r':
                     case '\n': break;
 
+                    case '#':
+                        if (parse.Comment()) return parse.GetToken();
+                        break;
+
                     default:
                         parse.tok.Append(parse.ch);
                         break;
@@ -1063,6 +1067,18 @@ namespace Liquid.Console
                 }
                 tok.Append(ch);
                 return false;
+            }
+
+            internal bool Comment() {
+                if (!OuterScope) {
+                    tok.Append(ch);
+                    return false;
+                }
+                pos = input.IndexOf('\n');
+                if (pos == -1) {
+                    pos = input.Length - 1;
+                }
+                return true;
             }
 
             internal bool Quote(bool keep = false) {
