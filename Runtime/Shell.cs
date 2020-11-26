@@ -105,10 +105,18 @@ namespace Liquid.Console
                 { typeof(int), ParseInt },
                 { typeof(float), ParseFloat },
                 { typeof(bool), ParseBool },
+
+                // Arrays
                 { typeof(string[]), ParseArray<string>(ParseString) },
                 { typeof(int[]), ParseArray<int>(ParseInt) },
                 { typeof(float[]), ParseArray<float>(ParseFloat) },
                 { typeof(bool[]), ParseArray<bool>(ParseBool) },
+                { typeof(string[][]), ParseArray<string[]>(ParseArray<string>(ParseString)) },
+                { typeof(int[][]), ParseArray<int[]>(ParseArray<int>(ParseInt)) },
+                { typeof(float[][]), ParseArray<float[]>(ParseArray<float>(ParseFloat)) },
+                { typeof(bool[][]), ParseArray<bool[]>(ParseArray<bool>(ParseInt)) },
+
+                // Vectors
                 { typeof(Vector2), ParseVector<Vector2>(2) },
                 { typeof(Vector3), ParseVector<Vector3>(3) },
                 { typeof(Vector4), ParseVector<Vector4>(4) },
@@ -118,6 +126,17 @@ namespace Liquid.Console
                 { typeof(Color32), ParseVector<Color32>(4) },
                 { typeof(Rect), ParseVector<Rect>(4) },
                 { typeof(RectInt), ParseVector<RectInt>(4) },
+
+                // Arrays of vectors
+                { typeof(Vector2[]), ParseArray<Vector2>(ParseVector<Vector2>(2)) },
+                { typeof(Vector3[]), ParseArray<Vector3>(ParseVector<Vector3>(3)) },
+                { typeof(Vector4[]), ParseArray<Vector4>(ParseVector<Vector4>(4)) },
+                { typeof(Vector2Int[]), ParseArray<Vector2Int>(ParseVector<Vector2Int>(2)) },
+                { typeof(Vector3Int[]), ParseArray<Vector3Int>(ParseVector<Vector3Int>(3)) },
+                { typeof(Color[]), ParseArray<Color>(ParseVector<Color>(4)) },
+                { typeof(Color32[]), ParseArray<Color32>(ParseVector<Color32>(4)) },
+                { typeof(Rect[]), ParseArray<Rect>(ParseVector<Rect>(4)) },
+                { typeof(RectInt[]), ParseArray<RectInt>(ParseVector<RectInt>(4)) },
             };
 
         // Only access inside a command method.
