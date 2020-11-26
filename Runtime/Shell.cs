@@ -113,9 +113,6 @@ namespace Liquid.Console
                 { typeof(int[]), ParseArray<int>(ParseInt) },
                 { typeof(float[]), ParseArray<float>(ParseFloat) },
                 { typeof(bool[]), ParseArray<bool>(ParseBool) },
-                { typeof(int?), ParseNullable<int>(ParseInt) },
-                { typeof(float?), ParseNullable<float>(ParseFloat) },
-                { typeof(bool?), ParseNullable<bool>(ParseBool) },
             };
 
         // Only access inside a command method.
@@ -614,16 +611,6 @@ namespace Liquid.Console
                 return true;
             };
         }
-
-        static ArgParser ParseNullable<T>(ArgParser parser) where T : struct
-            => (string input, out object val) => {
-                if (parser(input, out object v)) {
-                    val = new Nullable<T>((T)v);
-                    return true;
-                }
-                val = null;
-                return false;
-            };
 
         static List<string> Parse(ref string input) {
             var stack = new List<string>();
