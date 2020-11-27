@@ -34,15 +34,25 @@ namespace Liquid.Console
         [AttributeUsage(AttributeTargets.Method | AttributeTargets.Field)]
         public class Hidden : Attribute {}
 
+        [AttributeUsage(AttributeTargets.Method | AttributeTargets.Field)]
+        public class Cheat : Attribute {}
+
         public struct Line {
             public string value;
             public int color;
         }
 
         struct Function {
-            internal enum Type { Command, Variable, Hidden, Alias }
+            [System.Flags]
+            internal enum Flags {
+                Command  = 0,
+                Variable = 1 << 0,
+                Hidden   = 1 << 1,
+                Alias    = 1 << 2,
+                Cheat    = 1 << 3,
+            }
 
-            internal Function.Type type;
+            internal Function.Flags flags;
             internal object target;
             internal object reference;
             internal MethodInfo method;
@@ -68,10 +78,6 @@ namespace Liquid.Console
             }
         }
 
-        // The buffer contains messages buffered by the shell. The buffer should
-        // be cleared once the messages are flushed.
-        public static readonly List<Line> buffer = new List<Line>();
-
         enum ConError {
             UnsupportedType,
             UndefinedLocal,
@@ -87,7 +93,19 @@ namespace Liquid.Console
             VoidReturn,
             Readonly,
             Destroyed,
+            CheatsDisabled,
         };
+
+        // The buffer contains messages buffered by the shell. The buffer should
+        // be cleared once the messages are flushed.
+        public static readonly List<Line> buffer = new List<Line>();
+
+        // Whether the console will register or run commands.
+        public static bool enabled = false;
+
+        // Whether fields and methods marked with the [Shell.Cheat] attribute
+        // are allowed to be executed.
+        public static bool cheats = true;
 
         const BindingFlags Flags = BindingFlags.NonPublic
                                  | BindingFlags.Public
@@ -150,6 +168,7 @@ namespace Liquid.Console
         // Initializes the shell by adding some default commands.
         // Optionally adds extension commands.
         public static void Init(bool math = false) {
+            enabled = true;
             Module(typeof(Shell));
             Var("zero", () => Vector4.zero);
             Var("one", () => Vector4.one);
@@ -194,6 +213,7 @@ namespace Liquid.Console
             => AddModule(type, null, module);
 
         static void AddModule(Type type, object target, string module) {
+            if (!enabled) return;
             var flags = target == null ? Flags & ~BindingFlags.Instance : Flags;
 
             foreach (var method in type.GetMethods(flags)) {
@@ -214,6 +234,7 @@ namespace Liquid.Console
         // Adds a command by finding the method in the target object.
         // The name of the method is not case sensitive.
         public static void Func(object target, string method) {
+            if (!enabled) return;
             var type = target.GetType();
             var info = type.GetMethod(method, Flags);
 
@@ -234,6 +255,7 @@ namespace Liquid.Console
         // Adds a command by finding the static method in the type.
         // Should only be used with static methods.
         public static void Func(Type type, string staticMethod) {
+            if (!enabled) return;
             var info = type.GetMethod(staticMethod, Flags);
             if (info == null) {
                 Fail(ConError.UndefinedMethod, type, staticMethod);
@@ -287,21 +309,26 @@ namespace Liquid.Console
 
         static void AddFunc(MethodInfo method, object target,
                             string name, string module = null) {
+            if (!enabled) return;
             var sign = method.GetParameters();
             var func = new Function {
                 target = target,
                 reference = target,
                 method = method,
                 signature = sign,
-                type = Function.Type.Command,
+                flags = Function.Flags.Command,
             };
             var command = method.GetCustomAttribute<Command>();
             if (command != null) {
                 name = name ?? command.name;
                 func.usage = command.usage;
             }
+
             if (method.GetCustomAttribute<Hidden>() != null) {
-                func.type = Function.Type.Hidden;
+                func.flags |= Function.Flags.Hidden;
+            }
+            if (method.GetCustomAttribute<Cheat>() != null) {
+                func.flags |= Function.Flags.Cheat;
             }
 
             name = (name ?? method.Name).ToLowerInvariant();
@@ -312,6 +339,7 @@ namespace Liquid.Console
         }
 
         static void AddFunc(Function func, string name) {
+            if (!enabled) return;
             // Make sure we can parse the required items
             foreach (var param in func.signature) {
                 if (!parsers.ContainsKey(param.ParameterType)) {
@@ -329,6 +357,7 @@ namespace Liquid.Console
         // Add a reference to a variable or field. The fieldName should match the field's
         // name exactly.
         public static void Var(object target, string field) {
+            if (!enabled) return;
             var type = target.GetType();
             var info = type.GetField(field, Flags);
 
@@ -353,6 +382,7 @@ namespace Liquid.Console
         // Add a reference to a static field. staticField must match the field's name
         // exactly.
         public static void Var(Type type, string staticField) {
+            if (!enabled) return;
             var info = type.GetField(staticField, Flags);
             if (info == null) {
                 Fail(ConError.UndefinedField, type, staticField);
@@ -380,6 +410,7 @@ namespace Liquid.Console
         // is removed when the GameObject is destroyed.
         public static void Var<T>(string name, Func<T> getvar,
                                   Action<T> setvar, object instance = null) {
+            if (!enabled) return;
             Action getset = () => {
                 if (ArgCount == 0) {
                     Print(getvar().ToString());
@@ -396,7 +427,7 @@ namespace Liquid.Console
                 target = getset.Target,
                 reference = instance,
                 signature = getset.Method.GetParameters(),
-                type = Function.Type.Variable
+                flags = Function.Flags.Variable
             };
 
             AddFunc(func, name.ToLowerInvariant());
@@ -404,6 +435,7 @@ namespace Liquid.Console
 
         static void AddVar(FieldInfo field, object target,
                            string name, string module = null) {
+            if (!enabled) return;
             Action getset = () => {
                 if (ArgCount == 0) {
                     Print(field.GetValue(target).ToString());
@@ -420,7 +452,7 @@ namespace Liquid.Console
                 target = getset.Target,
                 reference = getset.Target,
                 signature = getset.Method.GetParameters(),
-                type = Function.Type.Variable,
+                flags = Function.Flags.Variable,
             };
             var conVar = field.GetCustomAttribute<ConVar>();
 
@@ -430,7 +462,10 @@ namespace Liquid.Console
             }
 
             if (field.GetCustomAttribute<Hidden>() != null) {
-                func.type = Function.Type.Hidden;
+                func.flags |= Function.Flags.Hidden;
+            }
+            if (field.GetCustomAttribute<Cheat>() != null) {
+                func.flags |= Function.Flags.Cheat;
             }
 
             name = (name ?? field.Name).ToLowerInvariant();
@@ -442,6 +477,7 @@ namespace Liquid.Console
 
         // Unregister a command or variable
         public static void Remove(string name) {
+            if (!enabled) return;
             locals.Remove(name.ToLowerInvariant());
         }
 
@@ -456,6 +492,7 @@ namespace Liquid.Console
         // [ConVar]. If a name was given to the module when it was added, it
         // should also be given here.
         public static void RemoveModule(Type type, string module = null) {
+            if (!enabled) return;
             foreach (var method in type.GetMethods(Flags)) {
                 var command = method.GetCustomAttribute<Command>();
                 if (command == null) continue;
@@ -571,6 +608,12 @@ namespace Liquid.Console
                 Remove(name);
                 return false;
             }
+
+            if (!cheats && func.flags.HasFlag(Function.Flags.Cheat)) {
+                Fail(ConError.CheatsDisabled, name);
+                return false;
+            }
+
             var args = new object[func.signature.Length];
 
             for (int i = 0; i < args.Length; ++i) {
@@ -594,6 +637,7 @@ namespace Liquid.Console
 
         // Evaluates a command.
         public static bool Eval(string input) {
+            if (!enabled) return false;
             bool ok = true;
             while (ok && input != null && input != "") {
                 var stack = Parse(ref input);
@@ -617,6 +661,7 @@ namespace Liquid.Console
         // Add a parser to handle objects of type T. If array is set to true
         // then a parser that handles T[] will also be created.
         public static void AddParser<T>(ArgParser parser, bool array = false) {
+            if (!enabled) return;
             if (parsers.ContainsKey(typeof(T))) {
                 parsers[typeof(T)] = parser;
             } else {
@@ -962,9 +1007,9 @@ namespace Liquid.Console
 
         static string LocalSignature(string name, in Function func) {
             var sign = new StringBuilder();
-            if (func.type == Function.Type.Variable) {
+            if (func.flags.HasFlag(Function.Flags.Variable)) {
                 sign.Append("var ");
-            } else if (func.type == Function.Type.Alias) {
+            } else if (func.flags.HasFlag(Function.Flags.Alias)) {
                 sign.Append("alias ");
             }
             sign.Append(name);
@@ -1003,20 +1048,25 @@ namespace Liquid.Console
                     return "cannot get argument outside of a command method.";
                 case ConError.StaticField:
                     return "static field '{1}' cannot have a target object '{0}'";
+                case ConError.CheatsDisabled:
+                    return "'{0}' can only be used with cheats enabled";
 
                 default: return null;
             }
         }
 
         static void Fail(ConError error, params object[] args) {
-            ErrorFmt(string.Concat("error: ", GetErrorString(error)), args);
+            ErrorFmt($"error[{(int)error:D2}]: {GetErrorString(error)}", args);
         }
 
         [Command("prints usage for a given command")]
         static void Help(string command = null) {
             if (command == null) {
                 foreach (var local in locals) {
-                    if (local.Value.type == Function.Type.Command) {
+                    if (local.Value.flags.HasFlag(Function.Flags.Hidden)) {
+                        continue;
+                    }
+                    if (local.Value.flags.HasFlag(Function.Flags.Command)) {
                         Print(local.Key);
                     }
                 }
@@ -1062,7 +1112,7 @@ namespace Liquid.Console
                 method = command.Method,
                 target = command.Target,
                 signature = command.Method.GetParameters(),
-                type = Function.Type.Alias,
+                flags = Function.Flags.Alias | Function.Flags.Hidden,
             };
             AddFunc(func, alias.ToLowerInvariant());
         }
