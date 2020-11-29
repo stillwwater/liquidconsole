@@ -88,6 +88,8 @@ namespace Liquid.Console
         int historyPosition;
         List<string> history;
         List<string> completeBuffer;
+        List<Shell.Line> bufferedLogs;
+        Shell.Line lastStackTrace;
 
         public static bool IsOpen => state != State.Closed;
 
@@ -98,6 +100,14 @@ namespace Liquid.Console
             }
             SwitchState(next);
             return true;
+        }
+
+        void OnEnable() {
+            Application.logMessageReceivedThreaded += HandleLog;
+        }
+
+        void OnDisable() {
+            Application.logMessageReceivedThreaded -= HandleLog;
         }
 
         void Awake() {
@@ -118,6 +128,7 @@ namespace Liquid.Console
             isInit = true;
             history = new List<string>();
             completeBuffer = new List<string>();
+            bufferedLogs = new List<Shell.Line>();
 
             Debug.Assert(logItem, "[Terminal] Missing LogItem prefab");
             Debug.Assert(consoleWindow, "[Terminal] Missing ConsoleWindow prefab");
@@ -371,6 +382,25 @@ namespace Liquid.Console
             refs.autoComplete.gameObject.SetActive(false);
         }
 
+        void HandleLog(string message, string stackTrace, LogType type) {
+            var line = new Shell.Line { value = message, stackTrace = stackTrace };
+            switch (type) {
+                case LogType.Error:
+                    line.color = 1;
+                    break;
+
+                case LogType.Warning:
+                    line.color = 3;
+                    break;
+
+                case LogType.Log:
+                default:
+                    line.color = 7;
+                    break;
+            }
+            Shell.buffer.Add(line);
+        }
+
         void Update() {
             if (locked) {
                 return;
@@ -446,15 +476,27 @@ namespace Liquid.Console
                 return;
             }
 
-            foreach (var ln in Shell.buffer) {
+            Shell.buffer.CopyTo(bufferedLogs);
+            foreach (var ln in bufferedLogs) {
                 RenderText(ln.value, ln.color);
             }
+
+            lastStackTrace = Shell.buffer.Pop();
             Shell.buffer.Clear();
+            bufferedLogs.Clear();
         }
 
         [Command]
         void Clear() {
             ClearLogs(refs.logs);
+        }
+
+        [Command("Print stack trace of the last Debug message")]
+        void Trace() {
+            if (lastStackTrace.stackTrace != null) {
+                RenderText(lastStackTrace.value, lastStackTrace.color);
+                RenderText(lastStackTrace.stackTrace, 7);
+            }
         }
 
         [Command]

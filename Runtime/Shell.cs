@@ -28,6 +28,54 @@ namespace Liquid.Console
         }
     }
 
+    // The console buffer is thread safe so Shell.Print and friends can be
+    // called from other threads, but commands should only execute on the
+    // main thread.
+    public class ConcurrentBuffer<T> where T : struct {
+        object lock_ = new object();
+        List<T> list;
+
+        public ConcurrentBuffer(int size = 0) {
+            list = new List<T>(size);
+        }
+
+        public int Count {
+            get {
+                lock (lock_) {
+                    return list.Count;
+                }
+            }
+        }
+
+        public void CopyTo(IList<T> result) {
+            lock (lock_) {
+                foreach (var x in list) {
+                    result.Add(x);
+                }
+            }
+        }
+
+        public void Add(T item) {
+            lock (lock_) {
+                list.Add(item);
+            }
+        }
+
+        public T Pop() {
+            lock (lock_) {
+                var item = list[list.Count - 1];
+                list.RemoveAt(list.Count - 1);
+                return item;
+            }
+        }
+
+        public void Clear() {
+            lock (lock_) {
+                list.Clear();
+            }
+        }
+    }
+
     public static class Shell {
         public delegate bool ArgParser(string input, out object val);
 
@@ -39,6 +87,7 @@ namespace Liquid.Console
 
         public struct Line {
             public string value;
+            public string stackTrace;
             public int color;
         }
 
@@ -98,7 +147,8 @@ namespace Liquid.Console
 
         // The buffer contains messages buffered by the shell. The buffer should
         // be cleared once the messages are flushed.
-        public static readonly List<Line> buffer = new List<Line>();
+        public static readonly ConcurrentBuffer<Line> buffer
+            = new ConcurrentBuffer<Line>();
 
         // Whether the console will register or run commands.
         public static bool enabled = false;
@@ -593,9 +643,7 @@ namespace Liquid.Console
             if (buffer.Count == 0) {
                 return null;
             }
-            var top = buffer[buffer.Count - 1];
-            buffer.RemoveAt(buffer.Count - 1);
-            return top.value;
+            return buffer.Pop().value;
         }
 
         static bool Call(string name) {
