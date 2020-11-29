@@ -14,6 +14,24 @@ namespace Liquid.Console
         [SerializeField] AutoCompleteMode autoCompleteMode = default(AutoCompleteMode);
         [SerializeField] int autoCompleteItems = 16;
 
+        [SerializeField] KeyBinding[] keyBindings = new KeyBinding[] {
+            new KeyBinding {
+                modifier = KeyCode.LeftControl,
+                key = KeyCode.L,
+                command = "clear"
+            },
+            new KeyBinding {
+                modifier = KeyCode.LeftControl,
+                key = KeyCode.Equals,
+                command = "term.scale (+ :term.scale 0.25)"
+            },
+            new KeyBinding {
+                modifier = KeyCode.LeftControl,
+                key = KeyCode.Minus,
+                command = "term.scale (- :term.scale 0.25)"
+            },
+        };
+
         [Header("Options")]
         [SerializeField] bool enableCheats      = false;
         [SerializeField] bool extraCommands     = true;
@@ -70,6 +88,15 @@ namespace Liquid.Console
 
             // Only display autocomplete window when tab is pressed.
             TabPress,
+        }
+
+        [Serializable]
+        public struct KeyBinding {
+            [Tooltip("Whether this binding will be used while the console is closed")]
+            public bool consoleClosed;
+            public KeyCode key;
+            public KeyCode modifier;
+            public string command;
         }
 
         struct References {
@@ -452,6 +479,20 @@ namespace Liquid.Console
             Shell.buffer.Add(line);
         }
 
+        void ProcessKeyBindings() {
+            foreach (var key in keyBindings) {
+                if (state == State.Closed && !key.consoleClosed) {
+                    continue;
+                }
+                if (Input.GetKeyDown(key.key)) {
+                    if (key.modifier != KeyCode.None && !Input.GetKey(key.modifier)) {
+                        continue;
+                    }
+                    Shell.Eval(key.command);
+                }
+            }
+        }
+
         void Update() {
             if (locked) {
                 return;
@@ -465,6 +506,10 @@ namespace Liquid.Console
                 }
                 SwitchState(State.OpenMax);
                 return;
+            }
+
+            if (Input.anyKeyDown) {
+                ProcessKeyBindings();
             }
 
             if (state == State.Closed) {
