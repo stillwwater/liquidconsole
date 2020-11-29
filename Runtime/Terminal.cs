@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,6 +11,8 @@ namespace Liquid.Console
         [SerializeField] KeyCode toggleKey = KeyCode.F1;
         [SerializeField] string caret      = "→";
         [SerializeField] int cursorWidth   = 12;
+        [SerializeField] AutoCompleteMode autoCompleteMode = default(AutoCompleteMode);
+        [SerializeField] int autoCompleteItems = 16;
 
         [Header("Options")]
         [SerializeField] bool enableCheats      = false;
@@ -35,8 +38,8 @@ namespace Liquid.Console
             new Color32(0xff, 0xed, 0xcb, 0xff), // Warnings
             new Color32(0xce, 0xb3, 0xf7, 0xff), // Special
             new Color32(0x8d, 0x9a, 0xd1, 0xff),
-            new Color32(0x26, 0x2b, 0x3b, 0xff),
-            new Color32(0xe6, 0xe6, 0xe6, 0xff), // Foreground
+            new Color32(0xd7, 0xe2, 0x6d, 0xff),
+            new Color32(0x63, 0x6b, 0x90, 0xff), // Foreground
         };
 
         [Header("Interface")]
@@ -50,6 +53,18 @@ namespace Liquid.Console
 
         public enum State { Closed, OpenMin, OpenMax }
 
+        public enum AutoCompleteMode {
+            // First token will show the autocomplete window
+            // following tokens require tab to be pressed.
+            FirstToken,
+
+            // Always display autocomplete window when possible.
+            Always,
+
+            // Only display autocomplete window when tab is pressed.
+            TabPress,
+        }
+
         struct References {
             public RectTransform window;
             public RectTransform logs;
@@ -58,6 +73,7 @@ namespace Liquid.Console
             public RectTransform input;
             public RectTransform submitButton;
             public RectTransform closeButton;
+            public RectTransform autoComplete;
         }
 
         static bool isInit;
@@ -68,6 +84,8 @@ namespace Liquid.Console
         float height;
         int logIndex;
         bool locked;
+        bool firstToken = true;
+        List<string> completeBuffer = new List<string>();
 
         public static bool IsOpen => state != State.Closed;
 
@@ -110,6 +128,7 @@ namespace Liquid.Console
                 input        = FindChild("Input"),
                 submitButton = FindChild("Submit"),
                 closeButton  = FindChild("Close"),
+                autoComplete = FindChild("AutoComplete"),
             };
 
             input = refs.input.GetComponent<InputField>();
@@ -218,6 +237,7 @@ namespace Liquid.Console
         void UpdateColors() {
             Image im;
             var bg = colors[0];
+            var alt = colors[6];
 
             im = refs.bufferWindow.GetComponent<Image>();
             im.color = new Color(bg.r, bg.g, bg.b, windowOpacity);
@@ -225,12 +245,15 @@ namespace Liquid.Console
             im = refs.inputWindow.GetComponent<Image>();
             im.color = new Color(bg.r, bg.g, bg.b, inputOpacity);
 
+            im = refs.autoComplete.GetComponent<Image>();
+            im.color = alt;
+
             input.textComponent.color = colors[2];
         }
 
         void RenderText(string str, int color) {
             if (str.Length <= Shell.columns && !str.Contains("\n")) {
-                CreateLog(str, color);
+                CreateLog(refs.logs, str, color);
                 return;
             }
             // Handle multiline input
@@ -242,18 +265,25 @@ namespace Liquid.Console
                     length = lf - i;
                     offset = 1;
                 }
-                CreateLog(str.Substring(i, length), color);
+                CreateLog(refs.logs, str.Substring(i, length), color);
                 i += length + offset;
             }
         }
 
-        void CreateLog(string str, int color) {
+        void CreateLog(RectTransform parent, string str, int color) {
             Debug.Assert(color >= 0 && color < colors.Length);
-            var go = Instantiate(logItem, refs.logs);
+            var go = Instantiate(logItem, parent);
             var text = go.GetComponent<Text>();
+
             text.text = str;
             text.color = colors[color];
             text.name = (logIndex++).ToString("x3");
+        }
+
+        void ClearLogs(RectTransform parent) {
+            foreach (Transform child in parent) {
+                Destroy(child.gameObject);
+            }
         }
 
         void EnterCommand(string str) {
@@ -266,6 +296,7 @@ namespace Liquid.Console
         void ResetCursor() {
             input.ActivateInputField();
             input.Select();
+            firstToken = true;
         }
 
         void SwitchState(State next) {
@@ -286,12 +317,46 @@ namespace Liquid.Console
             StartCoroutine(AnimateWindow(0f));
         }
 
+        void ShowCompletions() {
+            Shell.CompleteSymbol(input.text, completeBuffer);
+            ClearLogs(refs.autoComplete);
+
+            if (completeBuffer.Count < 1) {
+                HideCompletions();
+                return;
+            }
+            refs.autoComplete.gameObject.SetActive(true);
+
+            for (int i = 0; i < completeBuffer.Count; ++i) {
+                if (i > autoCompleteItems) {
+                    CreateLog(refs.autoComplete,
+                              $"+{completeBuffer.Count - autoCompleteItems}", 7);
+                    break;
+                }
+                CreateLog(refs.autoComplete, completeBuffer[i], 7);
+            }
+        }
+
+        void AutoComplete() {
+            input.text = Shell.CompleteSymbol(input.text, completeBuffer);
+
+            if (completeBuffer.Count <= 1) {
+                ResetCursor();
+                input.caretPosition = input.text.Length;
+            }
+        }
+
+        void HideCompletions() {
+            refs.autoComplete.gameObject.SetActive(false);
+        }
+
         void Update() {
             if (locked) {
                 return;
             }
 
             if (Input.GetKeyDown(toggleKey)) {
+                HideCompletions();
                 if (Input.GetKey(KeyCode.LeftShift)) {
                     SwitchState(State.OpenMin);
                     return;
@@ -302,7 +367,30 @@ namespace Liquid.Console
 
             if (Input.GetKeyDown(KeyCode.Return)
                 || Input.GetKeyDown(KeyCode.KeypadEnter)) {
+                HideCompletions();
                 EnterCommand(input.text);
+                return;
+            }
+
+            if ((autoCompleteMode == AutoCompleteMode.Always
+                || (autoCompleteMode == AutoCompleteMode.FirstToken && firstToken))
+                && Input.anyKeyDown) {
+                ShowCompletions();
+            }
+
+            if (Input.GetKeyDown(KeyCode.Backspace)) {
+                HideCompletions();
+            }
+
+            if (Input.GetKeyDown(KeyCode.Tab)) {
+                ShowCompletions();
+                AutoComplete();
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Space)) {
+                HideCompletions();
+                firstToken = false;
             }
 
             if (Shell.buffer.Count == 0) {
@@ -317,9 +405,7 @@ namespace Liquid.Console
 
         [Command]
         void Clear() {
-            foreach (Transform child in refs.logs) {
-                Destroy(child.gameObject);
-            }
+            ClearLogs(refs.logs);
         }
 
         [Command]

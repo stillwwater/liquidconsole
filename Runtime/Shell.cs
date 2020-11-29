@@ -661,6 +661,45 @@ namespace Liquid.Console
             return ok;
         }
 
+        public static string CompleteSymbol(string input, List<string> result) {
+            int token = input.LastIndexOfAny(" :(){},\"".ToCharArray());
+            var partial = input.Substring(token + 1);
+            result.Clear();
+
+            if (partial == "") {
+                return input;
+            }
+            var partialLower = partial.ToLowerInvariant();
+
+            foreach (var local in locals.Keys) {
+                if (local.StartsWith(partialLower)) {
+                    result.Add(local);
+                }
+            }
+
+            if (result.Count == 0) {
+                return input;
+            }
+
+            input = input.Substring(0, token + 1);
+            var match = result[0];
+            int partialLength = match.Length;
+
+            if (result.Count == 1) {
+                return input + match;
+            }
+
+            foreach (var symbol in result) {
+                partialLength = Math.Min(partialLength, symbol.Length);
+
+                for (int i = 0; i < partialLength; ++i) {
+                    if (symbol[i] != match[i])
+                        partialLength = i;
+                }
+            }
+            return input + match.Substring(0, partialLength);
+        }
+
         // Add a parser to handle objects of type T. If array is set to true
         // then a parser that handles T[] will also be created.
         public static void AddParser<T>(ArgParser parser, bool array = false) {
