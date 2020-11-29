@@ -85,7 +85,9 @@ namespace Liquid.Console
         int logIndex;
         bool locked;
         bool firstToken = true;
-        List<string> completeBuffer = new List<string>();
+        int historyPosition;
+        List<string> history;
+        List<string> completeBuffer;
 
         public static bool IsOpen => state != State.Closed;
 
@@ -114,6 +116,9 @@ namespace Liquid.Console
                 DontDestroyOnLoad(gameObject);
             }
             isInit = true;
+            history = new List<string>();
+            completeBuffer = new List<string>();
+
             Debug.Assert(logItem, "[Terminal] Missing LogItem prefab");
             Debug.Assert(consoleWindow, "[Terminal] Missing ConsoleWindow prefab");
 
@@ -291,12 +296,28 @@ namespace Liquid.Console
             Shell.Eval(str);
             ResetCursor();
             input.text = "";
+
+            if (str != "") {
+                if (history.Count > 0 && history[history.Count - 1] == str) {
+                    historyPosition = history.Count;
+                    return;
+                }
+                history.Add(str);
+                historyPosition = history.Count;
+            }
         }
 
         void ResetCursor() {
             input.ActivateInputField();
             input.Select();
             firstToken = true;
+        }
+
+        void SetInput(string str) {
+            ResetCursor();
+            input.text = str;
+            input.caretPosition = input.text.Length;
+            firstToken = false;
         }
 
         void SwitchState(State next) {
@@ -365,6 +386,10 @@ namespace Liquid.Console
                 return;
             }
 
+            if (state == State.Closed) {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.Return)
                 || Input.GetKeyDown(KeyCode.KeypadEnter)) {
                 HideCompletions();
@@ -372,14 +397,17 @@ namespace Liquid.Console
                 return;
             }
 
+            if (Input.GetKeyDown(KeyCode.Backspace)) {
+                HideCompletions();
+                if (input.text == "") {
+                    firstToken = true;
+                }
+            }
+
             if ((autoCompleteMode == AutoCompleteMode.Always
                 || (autoCompleteMode == AutoCompleteMode.FirstToken && firstToken))
                 && Input.anyKeyDown) {
                 ShowCompletions();
-            }
-
-            if (Input.GetKeyDown(KeyCode.Backspace)) {
-                HideCompletions();
             }
 
             if (Input.GetKeyDown(KeyCode.Tab)) {
@@ -391,6 +419,27 @@ namespace Liquid.Console
             if (Input.GetKeyDown(KeyCode.Space)) {
                 HideCompletions();
                 firstToken = false;
+            }
+
+            if (Input.GetKeyDown(KeyCode.UpArrow)) {
+                if (history.Count == 0) {
+                    return;
+                }
+                if (--historyPosition < 0) {
+                    historyPosition = 0;
+                }
+                SetInput(history[historyPosition]);
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.DownArrow)) {
+                if (++historyPosition >= history.Count) {
+                    historyPosition = history.Count;
+                    SetInput("");
+                    return;
+                }
+                SetInput(history[historyPosition]);
+                return;
             }
 
             if (Shell.buffer.Count == 0) {
