@@ -801,6 +801,26 @@ namespace Liquid.Console
         public static void WarningFmt(string format, params object[] args)
             => Out(string.Format(format, args), 2);
 
+        public static void PrintTable<T>(IList<T> items, int columns = -1) {
+            int width = 0;
+            foreach (var item in items) {
+                int len = item.ToString().Length + 4;
+                width = Math.Max(len, width);
+            }
+
+            if (columns == -1) {
+                columns = Shell.columns / width;
+            }
+
+            for (int i = 0; i < items.Count; i += columns) {
+                string row = items[i].ToString().PadRight(width);
+                for (int j = 1; j < columns && (i + j) < items.Count; j++) {
+                    row += items[i + j].ToString().PadRight(width);
+                }
+                Print(row);
+            }
+        }
+
         static bool ParseString(string input, out object val) {
             val = input;
             return true;
@@ -1152,14 +1172,16 @@ namespace Liquid.Console
         [Command("prints usage for a given command")]
         static void Help(string command = null) {
             if (command == null) {
+                var items = new List<string>();
                 foreach (var local in locals) {
                     if (local.Value.flags.HasFlag(Function.Flags.Hidden)) {
                         continue;
                     }
                     if (local.Value.flags.HasFlag(Function.Flags.Command)) {
-                        Print(local.Key);
+                        items.Add(local.Key);
                     }
                 }
+                PrintTable(items);
                 return;
             }
             string name = command.ToLowerInvariant();
@@ -1175,16 +1197,60 @@ namespace Liquid.Console
             }
         }
 
+        [Command("prints all commands and variables")]
+        static void Locals(bool showAll = false) {
+            var items = new List<string>();
+
+            foreach (var local in locals) {
+                var flags = local.Value.flags;
+                if (!showAll && flags.HasFlag(Function.Flags.Hidden)) {
+                    continue;
+                }
+
+                if (flags.HasFlag(Function.Flags.Command)) {
+                    items.Add(local.Key);
+                    continue;
+                }
+            }
+            PrintTable(items);
+            items.Clear();
+            Print();
+
+            foreach (var local in locals) {
+                var flags = local.Value.flags;
+                if (!showAll && flags.HasFlag(Function.Flags.Hidden)) {
+                    continue;
+                }
+                if (!flags.HasFlag(Function.Flags.Variable)) {
+                    continue;
+                }
+                var str = local.Key;
+                Shell.Eval(local.Key);
+
+                if (buffer.Count > 0) {
+                    str += string.Concat(": ", PopReturn<string>());
+                }
+                Print(str);
+            }
+        }
+
         [Command("defines a new variable")]
         static void Let(string variable, string val = null) {
             if (val == null) val = "0";
-            Func(() => {
+            Action command = () => {
                 if (ArgCount == 0) {
                     Print(val);
                     return;
                 }
                 val = Arg<string>(0);
-            }, variable.ToLowerInvariant());
+            };
+            var func = new Function {
+                method = command.Method,
+                target = command.Target,
+                signature = command.Method.GetParameters(),
+                flags = Function.Flags.Variable,
+            };
+            AddFunc(func, variable.ToLowerInvariant());
         }
 
         [Command("undefines a command or variable")]

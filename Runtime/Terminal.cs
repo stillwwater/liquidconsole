@@ -427,6 +427,10 @@ namespace Liquid.Console
                 return;
             }
 
+            if (!input.isFocused) {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.Backspace)) {
                 HideCompletions();
                 if (input.text == "") {
@@ -475,8 +479,8 @@ namespace Liquid.Console
             if (Shell.buffer.Count == 0) {
                 return;
             }
-
             Shell.buffer.CopyTo(bufferedLogs);
+
             foreach (var ln in bufferedLogs) {
                 RenderText(ln.value, ln.color);
             }
