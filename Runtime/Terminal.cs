@@ -23,6 +23,7 @@ namespace Liquid.Console
         [SerializeField] Font font         = null;
         [SerializeField] float lineSpacing = 0f;
         [SerializeField] float textShadow  = 2f;
+        [SerializeField] int fontSize      = 22;
 
         [Header("Appearance")]
         [SerializeField] [Range(0, 1)] float maxHeight           = 0.7f;
@@ -47,6 +48,12 @@ namespace Liquid.Console
         [SerializeField] bool submitButton = true;
         [SerializeField] bool closeButton  = false;
 
+// Mobile options are conditionally compiled so these may not be used.
+#pragma warning disable CS0414
+        [Header("Mobile")]
+        [SerializeField] int scaling = 4;
+#pragma warning restore CS0414
+
         [Header("Prefabs")]
         [SerializeField] Canvas consoleWindow = null;
         [SerializeField] Text logItem         = null;
@@ -68,6 +75,7 @@ namespace Liquid.Console
         struct References {
             public RectTransform window;
             public RectTransform logs;
+            public RectTransform buffer;
             public RectTransform bufferWindow;
             public RectTransform inputWindow;
             public RectTransform input;
@@ -85,6 +93,10 @@ namespace Liquid.Console
         int logIndex;
         bool locked;
         bool firstToken = true;
+        float submitWidth;
+        float closeWidth;
+        float currentScale;
+
         int historyPosition;
         List<string> history;
         List<string> completeBuffer;
@@ -115,6 +127,7 @@ namespace Liquid.Console
             Shell.cheats = enableCheats;
             Shell.Module(this);
             Shell.Eval("alias quit exit; alias cls clear");
+            Shell.Var("term.scale", () => currentScale, SetSize, this);
         }
 
         void Start() {
@@ -138,6 +151,7 @@ namespace Liquid.Console
 
             refs = new References {
                 window       = FindChild("Window"),
+                buffer       = FindChild("Buffer"),
                 bufferWindow = FindChild("BufferWindow"),
                 inputWindow  = FindChild("InputWindow"),
                 logs         = FindChild("Logs"),
@@ -149,7 +163,6 @@ namespace Liquid.Console
 
             input = refs.input.GetComponent<InputField>();
             Debug.Assert(input);
-            input.caretWidth = cursorWidth;
 
             height = Screen.height * maxHeight;
             refs.window.sizeDelta = new Vector2(refs.window.sizeDelta.x, height);
@@ -195,6 +208,17 @@ namespace Liquid.Console
                 Destroy(refs.closeButton.gameObject);
             }
 
+            submitWidth = refs.submitButton
+                .GetComponent<LayoutElement>().preferredWidth;
+
+            closeWidth = refs.closeButton
+                .GetComponent<LayoutElement>().preferredWidth;
+
+#if UNITY_IOS || UNITY_ANDROID
+            SetSize(scaling);
+#else
+            SetSize(1);
+#endif
             UpdateColors();
 
             state = State.Closed;
@@ -266,6 +290,36 @@ namespace Liquid.Console
 
             input.textComponent.color = colors[2];
         }
+
+        void SetSize(float scale) {
+            var size = (int)(fontSize * scale);
+            input.textComponent.fontSize = size;
+            logItem.fontSize = size;
+
+            refs.buffer.offsetMin = new Vector2(
+                refs.buffer.offsetMin.x, size * 2);
+
+            refs.inputWindow.sizeDelta = new Vector2(
+                refs.inputWindow.sizeDelta.x, size * 2);
+
+            var closeText = refs.closeButton.GetComponentInChildren<Text>();
+            var close = refs.closeButton.GetComponent<LayoutElement>();
+            closeText.fontSize = size;
+            close.preferredWidth = closeWidth * scale;
+
+            var submitText = refs.submitButton.GetComponentInChildren<Text>();
+            var submit = refs.submitButton.GetComponent<LayoutElement>();
+            submitText.fontSize = size;
+            submit.preferredWidth = submitWidth * scale;
+
+            input.caretWidth = (int)(cursorWidth * scale);
+
+            foreach (Transform log in refs.logs) {
+                log.GetComponent<Text>().fontSize = size;
+            }
+            currentScale = scale;
+        }
+
 
         void RenderText(string str, int color) {
             if (str.Length <= Shell.columns && !str.Contains("\n")) {
@@ -371,11 +425,8 @@ namespace Liquid.Console
 
         void AutoComplete() {
             input.text = Shell.CompleteSymbol(input.text, completeBuffer);
-
-            if (completeBuffer.Count <= 1) {
-                ResetCursor();
-                input.caretPosition = input.text.Length;
-            }
+            ResetCursor();
+            input.caretPosition = input.text.Length;
         }
 
         void HideCompletions() {

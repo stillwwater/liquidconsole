@@ -28,54 +28,6 @@ namespace Liquid.Console
         }
     }
 
-    // The console buffer is thread safe so Shell.Print and friends can be
-    // called from other threads, but commands should only execute on the
-    // main thread.
-    public class ConcurrentBuffer<T> where T : struct {
-        object lock_ = new object();
-        List<T> list;
-
-        public ConcurrentBuffer(int size = 0) {
-            list = new List<T>(size);
-        }
-
-        public int Count {
-            get {
-                lock (lock_) {
-                    return list.Count;
-                }
-            }
-        }
-
-        public void CopyTo(IList<T> result) {
-            lock (lock_) {
-                foreach (var x in list) {
-                    result.Add(x);
-                }
-            }
-        }
-
-        public void Add(T item) {
-            lock (lock_) {
-                list.Add(item);
-            }
-        }
-
-        public T Pop() {
-            lock (lock_) {
-                var item = list[list.Count - 1];
-                list.RemoveAt(list.Count - 1);
-                return item;
-            }
-        }
-
-        public void Clear() {
-            lock (lock_) {
-                list.Clear();
-            }
-        }
-    }
-
     public static class Shell {
         public delegate bool ArgParser(string input, out object val);
 
@@ -94,11 +46,12 @@ namespace Liquid.Console
         struct Function {
             [System.Flags]
             internal enum Flags {
-                Command  = 0,
-                Variable = 1 << 0,
-                Hidden   = 1 << 1,
-                Alias    = 1 << 2,
-                Cheat    = 1 << 3,
+                None     = 0,
+                Command  = 1 << 0,
+                Variable = 1 << 1,
+                Hidden   = 1 << 2,
+                Alias    = 1 << 3,
+                Cheat    = 1 << 4,
             }
 
             internal Function.Flags flags;
@@ -1207,6 +1160,11 @@ namespace Liquid.Console
                     continue;
                 }
 
+                if (showAll && flags.HasFlag(Function.Flags.Alias)) {
+                    items.Add(local.Key);
+                    continue;
+                }
+
                 if (flags.HasFlag(Function.Flags.Command)) {
                     items.Add(local.Key);
                     continue;
@@ -1319,7 +1277,7 @@ namespace Liquid.Console
         [Hidden] static bool OpLte(float a, float b) => a <= b;
         [Hidden] static bool OpGt(float a, float b) => a > b;
         [Hidden] static bool OpGte(float a, float b) => a >= b;
-        [Hidden] static bool Not(bool a) => !a;
+        static bool Not(bool a) => !a;
 
         struct Parser {
             internal string input;
@@ -1484,6 +1442,54 @@ namespace Liquid.Console
                 }
                 tok.Append(ch);
                 return false;
+            }
+        }
+    }
+
+    // The console buffer is thread safe so Shell.Print and friends can be
+    // called from other threads, but commands should only execute on the
+    // main thread.
+    public class ConcurrentBuffer<T> where T : struct {
+        object lock_ = new object();
+        List<T> list;
+
+        public ConcurrentBuffer(int size = 0) {
+            list = new List<T>(size);
+        }
+
+        public int Count {
+            get {
+                lock (lock_) {
+                    return list.Count;
+                }
+            }
+        }
+
+        public void CopyTo(IList<T> result) {
+            lock (lock_) {
+                foreach (var x in list) {
+                    result.Add(x);
+                }
+            }
+        }
+
+        public void Add(T item) {
+            lock (lock_) {
+                list.Add(item);
+            }
+        }
+
+        public T Pop() {
+            lock (lock_) {
+                var item = list[list.Count - 1];
+                list.RemoveAt(list.Count - 1);
+                return item;
+            }
+        }
+
+        public void Clear() {
+            lock (lock_) {
+                list.Clear();
             }
         }
     }
