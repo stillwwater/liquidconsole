@@ -107,6 +107,9 @@ namespace Liquid.Console
         // are allowed to be executed.
         public static bool cheats = true;
 
+        // The width of the console in characters.
+        public static int columns = 80;
+
         const BindingFlags Flags = BindingFlags.NonPublic
                                  | BindingFlags.Public
                                  | BindingFlags.Static
