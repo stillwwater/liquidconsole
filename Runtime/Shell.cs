@@ -131,18 +131,22 @@ namespace Liquid.Console
                 { typeof(string), ParseString },
                 { typeof(int), ParseInt },
                 { typeof(float), ParseFloat },
+                { typeof(double), ParseDouble },
+                { typeof(char), ParseChar },
                 { typeof(bool), ParseBool },
-                { typeof(GameObject), ParseGameObject },
 
                 // Arrays
                 { typeof(string[]), ParseArray<string>(ParseString) },
                 { typeof(int[]), ParseArray<int>(ParseInt) },
                 { typeof(float[]), ParseArray<float>(ParseFloat) },
+                { typeof(double[]), ParseArray<double>(ParseDouble) },
+                { typeof(char[]), ParseArray<char>(ParseChar) },
                 { typeof(bool[]), ParseArray<bool>(ParseBool) },
-                { typeof(GameObject[]), ParseArray<GameObject>(ParseGameObject) },
                 { typeof(string[][]), ParseArray<string[]>(ParseArray<string>(ParseString)) },
                 { typeof(int[][]), ParseArray<int[]>(ParseArray<int>(ParseInt)) },
                 { typeof(float[][]), ParseArray<float[]>(ParseArray<float>(ParseFloat)) },
+                { typeof(double[][]), ParseArray<double[]>(ParseArray<double>(ParseDouble)) },
+                { typeof(char[][]), ParseArray<char[]>(ParseArray<char>(ParseChar)) },
                 { typeof(bool[][]), ParseArray<bool[]>(ParseArray<bool>(ParseInt)) },
 
                 // Vectors
@@ -166,6 +170,9 @@ namespace Liquid.Console
                 { typeof(Color32[]), ParseArray<Color32>(ParseVector<Color32>(4)) },
                 { typeof(Rect[]), ParseArray<Rect>(ParseVector<Rect>(4)) },
                 { typeof(RectInt[]), ParseArray<RectInt>(ParseVector<RectInt>(4)) },
+
+                { typeof(GameObject), ParseGameObject },
+                { typeof(GameObject[]), ParseArray<GameObject>(ParseGameObject) },
             };
 
         // Only access inside a command method.
@@ -803,6 +810,20 @@ namespace Liquid.Console
             float f;
             bool ok = float.TryParse(input, out f);
             val = f;
+            return ok;
+        }
+
+        static bool ParseDouble(string input, out object val) {
+            double d;
+            bool ok = double.TryParse(input, out d);
+            val = d;
+            return ok;
+        }
+
+        static bool ParseChar(string input, out object val) {
+            char c;
+            bool ok = char.TryParse(input, out c);
+            val = c;
             return ok;
         }
 
