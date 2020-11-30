@@ -349,7 +349,9 @@ namespace Liquid.Console
             // Make sure we can parse the required items
             foreach (var param in func.signature) {
                 var type = param.ParameterType;
-                if (!parsers.ContainsKey(type) && !type.IsEnum) {
+                if (!parsers.ContainsKey(type)
+                    && !type.IsEnum
+                    && !typeof(Component).IsAssignableFrom(type)) {
                     Fail(ConError.UnsupportedType, type);
                     return;
                 }
@@ -565,6 +567,9 @@ namespace Liquid.Console
                 if (type.IsEnum) {
                     parser = (string input, out object val) =>
                         ParseEnum(input, type, out val);
+                } else if (typeof(Component).IsAssignableFrom(type)) {
+                    parser = (string input, out object val) =>
+                        ParseComponent(input, type, out val);
                 } else {
                     arg = null;
                     Fail(ConError.UnsupportedType, type);
@@ -820,6 +825,16 @@ namespace Liquid.Console
                 return true;
             }
             val = GameObject.Find(input);
+            return true;
+        }
+
+        static bool ParseComponent(string input, Type type, out object val) {
+            if (input == "" || input == "null") {
+                val = null;
+                return true;
+            }
+            var go = GameObject.Find(input);
+            val = go ? go.GetComponent(type) : null;
             return true;
         }
 
