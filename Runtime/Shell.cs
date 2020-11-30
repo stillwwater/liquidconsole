@@ -348,8 +348,9 @@ namespace Liquid.Console
             if (!enabled) return;
             // Make sure we can parse the required items
             foreach (var param in func.signature) {
-                if (!parsers.ContainsKey(param.ParameterType)) {
-                    Fail(ConError.UnsupportedType, param.ParameterType);
+                var type = param.ParameterType;
+                if (!parsers.ContainsKey(type) && !type.IsEnum) {
+                    Fail(ConError.UnsupportedType, type);
                     return;
                 }
             }
@@ -542,12 +543,6 @@ namespace Liquid.Console
 
         static bool StackLocal(int index, Type type, bool optional, out object arg) {
             int offset = (callstack.Count - 1);
-            ArgParser parser;
-            if (!parsers.TryGetValue(type, out parser)) {
-                arg = null;
-                Fail(ConError.UnsupportedType, type);
-                return false;
-            }
             if (offset < 0) {
                 Fail(ConError.NoStackFrame);
                 arg = null;
@@ -564,6 +559,19 @@ namespace Liquid.Console
                 return true;
             }
             var str = frame.arguments[index];
+            ArgParser parser;
+
+            if (!parsers.TryGetValue(type, out parser)) {
+                if (type.IsEnum) {
+                    parser = (string input, out object val) =>
+                        ParseEnum(input, type, out val);
+                } else {
+                    arg = null;
+                    Fail(ConError.UnsupportedType, type);
+                    return false;
+                }
+            }
+
             if (!parser(str, out arg)) {
                 Fail(ConError.ArgType, frame.func, str, type);
                 return false;
@@ -812,6 +820,19 @@ namespace Liquid.Console
                 return true;
             }
             val = GameObject.Find(input);
+            return true;
+        }
+
+        static bool ParseEnum(string input, Type type, out object val) {
+            int intValue;
+            if (!int.TryParse(input, out intValue)) {
+                if (!Enum.IsDefined(type, input)) {
+                    val = null;
+                    return false;
+                }
+                intValue = (int)Enum.Parse(type, input);
+            }
+            val = intValue;
             return true;
         }
 
