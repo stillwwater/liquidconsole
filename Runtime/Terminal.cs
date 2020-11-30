@@ -69,7 +69,11 @@ namespace Liquid.Console
 // Mobile options are conditionally compiled so these may not be used.
 #pragma warning disable CS0414
         [Header("Mobile")]
-        [SerializeField] int scaling = 4;
+        [SerializeField] int scaling              = 4;
+        [SerializeField] bool shakeToOpen         = true;
+        [SerializeField] bool shakeRequiresTouch  = false;
+        [SerializeField] float shakeMagnitude     = 3f;
+        [SerializeField] float shakeThresholdTime = 0.5f;
 #pragma warning restore CS0414
 
         [Header("Prefabs")]
@@ -123,6 +127,7 @@ namespace Liquid.Console
         float submitWidth;
         float closeWidth;
         float currentScale;
+        float lastShakeOpen;
 
         int historyPosition;
         List<string> history;
@@ -507,6 +512,18 @@ namespace Liquid.Console
                 SwitchState(State.OpenMax);
                 return;
             }
+
+            if (state == State.Closed
+                && shakeToOpen
+                && Input.acceleration.sqrMagnitude >= shakeMagnitude
+                && lastShakeOpen >= shakeThresholdTime
+                && (!shakeRequiresTouch || Input.touchCount > 0)) {
+
+                SwitchState(State.Closed);
+                lastShakeOpen = 0f;
+                return;
+            }
+            lastShakeOpen += Time.deltaTime;
 
             if (Input.anyKeyDown) {
                 ProcessKeyBindings();
