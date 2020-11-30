@@ -64,7 +64,7 @@ namespace Liquid.Console
         [Header("Interface")]
         [SerializeField] bool scrollBar    = true;
         [SerializeField] bool submitButton = true;
-        [SerializeField] bool closeButton  = false;
+        [SerializeField] bool closeButton  = true;
 
 // Mobile options are conditionally compiled so these may not be used.
 #pragma warning disable CS0414
@@ -248,6 +248,7 @@ namespace Liquid.Console
 
 #if UNITY_IOS || UNITY_ANDROID
             SetSize(scaling);
+            animationSpeed *= scaling;
 #else
             SetSize(1);
 #endif
@@ -324,6 +325,10 @@ namespace Liquid.Console
         }
 
         void SetSize(float scale) {
+            if (scale <= 0f) {
+                return;
+            }
+
             var size = (int)(fontSize * scale);
             input.textComponent.fontSize = size;
             logItem.fontSize = size;
@@ -348,6 +353,13 @@ namespace Liquid.Console
 
             foreach (Transform log in refs.logs) {
                 log.GetComponent<Text>().fontSize = size;
+            }
+
+            CharacterInfo info;
+            font.RequestCharactersInTexture(" ", size, FontStyle.Normal);
+
+            if (font.GetCharacterInfo(' ', out info, size, FontStyle.Normal)) {
+                Shell.columns = Screen.width / info.advance - 2;
             }
             currentScale = scale;
         }
