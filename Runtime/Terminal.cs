@@ -33,6 +33,7 @@ namespace Liquid.Console
         };
 
         [Header("Options")]
+        [Tooltip("Whether commands with the [Shell.Cheat] attribute can be executed")]
         [SerializeField] bool enableCheats      = false;
         [SerializeField] bool extraCommands     = true;
         [SerializeField] bool dontDestroyOnLoad = true;
@@ -69,7 +70,7 @@ namespace Liquid.Console
 // Mobile options are conditionally compiled so these may not be used.
 #pragma warning disable CS0414
         [Header("Mobile")]
-        [SerializeField] int scaling              = 4;
+        [SerializeField] int scaling              = 2;
         [SerializeField] bool shakeToOpen         = true;
         [SerializeField] bool shakeRequiresTouch  = false;
         [SerializeField] float shakeMagnitude     = 3f;

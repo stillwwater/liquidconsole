@@ -96,6 +96,7 @@ namespace Liquid.Console
             Readonly,
             Destroyed,
             CheatsDisabled,
+            NotAFunction,
         };
 
         // The buffer contains messages buffered by the shell. The buffer should
@@ -626,6 +627,11 @@ namespace Liquid.Console
                 return false;
             }
 
+            if (func.flags == Function.Flags.None) {
+                Fail(ConError.NotAFunction, name);
+                return false;
+            }
+
             // If the component has been destroyed this command should be removed
             if (func.target is MonoBehaviour && (MonoBehaviour)func.target == null) {
                 Fail(ConError.Destroyed, name, func.target.GetType());
@@ -680,6 +686,18 @@ namespace Liquid.Console
                 callstack.RemoveAt(callstack.Count - 1);
             }
             return ok;
+        }
+
+        // Adds a symbol to be included in autocomplete. This is useful for
+        // adding autocomplete to things that are not commands, such as
+        // level names etc.
+        public static void AddSymbol(string name) {
+            name = name.ToLowerInvariant();
+            if (locals.ContainsKey(name)) {
+                locals[name] = new Function();
+                return;
+            }
+            locals.Add(name, new Function());
         }
 
         public static string CompleteSymbol(string input, List<string> result) {
@@ -1164,6 +1182,7 @@ namespace Liquid.Console
                 case ConError.Destroyed: return "({0}) the Component '{1}' has been destroyed";
                 case ConError.InvalidEscape: return "'{0}' cannot be escaped using '\\'";
                 case ConError.Readonly: return "'{0}' is readonly and cannot be modified";
+                case ConError.NotAFunction: return "'{0}' is not a function";
                 case ConError.NoStackFrame:
                     return "cannot get argument outside of a command method.";
                 case ConError.StaticField:
