@@ -6,6 +6,9 @@ using UnityEngine;
 
 namespace Liquid.Console
 {
+    // Marks a method to be used as a command. If `name` is null the name of
+    // the method will be used. Use Shell.Module to register all methods with
+    // the [Command] attribute.
     [AttributeUsage(AttributeTargets.Method)]
     public class Command : Attribute {
         public readonly string usage;
@@ -17,6 +20,14 @@ namespace Liquid.Console
         }
     }
 
+    // Fields marked with the [ConVar] attribute will have a command created
+    // to get and set the field. If `name` is null the name of the field will
+    // be used. Use Shel.Module() to register fields with the [ConVar]
+    // attribute.
+    //
+    //     > field 12
+    //     > field
+    //     12
     [AttributeUsage(AttributeTargets.Field)]
     public class ConVar : Attribute {
         public readonly string usage;
@@ -31,11 +42,21 @@ namespace Liquid.Console
     public static class Shell {
         public delegate bool ArgParser(string input, out object val);
 
+        // Commands and variables with the [Shell.Hidden] attribute do not show
+        // up in the `help` list.
         [AttributeUsage(AttributeTargets.Method | AttributeTargets.Field)]
         public class Hidden : Attribute {}
 
+        // Commands and variables that use this attribute can only be used if
+        // Shell.cheats is set to true.
         [AttributeUsage(AttributeTargets.Method | AttributeTargets.Field)]
         public class Cheat : Attribute {}
+
+        // This attribute is used to note that a command can take any number of
+        // arguments. Commands that use variadic arguments can use Shell.ArgCount
+        // and Shell.Arg<T>() to get arguments.
+        [AttributeUsage(AttributeTargets.Method)]
+        public class VaArgs : Attribute {}
 
         public struct Line {
             public string value;
@@ -51,7 +72,8 @@ namespace Liquid.Console
                 Variable = 1 << 1,
                 Hidden   = 1 << 2,
                 Alias    = 1 << 3,
-                Cheat    = 1 << 4,
+                VaArgs   = 1 << 4,
+                Cheat    = 1 << 5,
             }
 
             internal Function.Flags flags;
@@ -343,6 +365,9 @@ namespace Liquid.Console
             }
             if (method.GetCustomAttribute<Cheat>() != null) {
                 func.flags |= Function.Flags.Cheat;
+            }
+            if (method.GetCustomAttribute<VaArgs>() != null) {
+                func.flags |= Function.Flags.VaArgs;
             }
 
             name = (name ?? method.Name).ToLowerInvariant();
@@ -1150,12 +1175,12 @@ namespace Liquid.Console
             } else if (func.flags.HasFlag(Function.Flags.Alias)) {
                 sign.Append("alias ");
             }
+
             sign.Append(name);
-            sign.Append(' ');
 
             for (int i = 0; i < func.signature.Length; ++i) {
                 var param = func.signature[i];
-                if (i > 0) sign.Append(' ');
+                sign.Append(' ');
 
                 sign.Append(param.ParameterType.Name);
                 sign.Append(':');
@@ -1164,6 +1189,10 @@ namespace Liquid.Console
                 if (param.IsOptional) {
                     sign.Append('?');
                 }
+            }
+
+            if (func.flags.HasFlag(Function.Flags.VaArgs)) {
+                sign.Append(" ...");
             }
             return sign.ToString();
         }
@@ -1307,13 +1336,13 @@ namespace Liquid.Console
             AddFunc(func, alias.ToLowerInvariant());
         }
 
-        [Command("prints a message to the console", "print")]
+        [Command("prints a message to the console", "print"), VaArgs]
         static void CPrint() => Out(JoinArgs());
 
         [Command("prints a message to the console with an optional color")]
         static void Puts(string value, int color = 7) => Out(value, color);
 
-        [Command("concatenates strings together")]
+        [Command("concatenates strings together"), VaArgs]
         static string Join() => JoinArgs(0, "");
 
         static void If(bool exp, string ifTrue, string ifFalse = null) {
